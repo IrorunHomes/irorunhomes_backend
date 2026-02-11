@@ -8,8 +8,8 @@ const { upload } = require('../utils/multer');
 // Tenant routes
 router.post('/request/:propertyId', protect, handleRequestProperty);
 router.get('/my-requests', protect, handleGetTenantRequests);
-router.post('/request/cancel', protect, HandleCancelRequest);
-router.get('/requests/requestId', protect, HandleGetARequest);
+router.post('/request/:requestId/cancel', protect, HandleCancelRequest);
+router.get('/request/requestId', protect, HandleGetARequest);
 router.post('/upload-receipt/:requestId', protect, upload.single('receipt'), handleUploadPaymentReceipt);
 
 

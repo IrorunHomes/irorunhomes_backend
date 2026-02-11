@@ -1,4 +1,3 @@
-
 const mongoose = require('mongoose');
 
 const rentalRequestSchema = new mongoose.Schema({
@@ -157,24 +156,6 @@ rentalRequestSchema.virtual('isExpiringSoon').get(function() {
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     return this.leaseInfo.endDate <= thirtyDaysFromNow && this.leaseInfo.endDate > new Date();
-});
-
-rentalRequestSchema.pre('save', function(next) {
-    this.updatedAt = Date.now();
-    
-    // Auto-calculate end date if start date and duration are set
-    if (this.leaseInfo.startDate && this.duration && !this.leaseInfo.endDate) {
-        const endDate = new Date(this.leaseInfo.startDate);
-        endDate.setMonth(endDate.getMonth() + this.duration);
-        this.leaseInfo.endDate = endDate;
-    }
-    
-    // Calculate total amount
-    if (this.leaseInfo.monthlyRent && this.duration && !this.leaseInfo.totalAmount) {
-        this.leaseInfo.totalAmount = this.leaseInfo.monthlyRent * this.duration;
-    }
-    
-    next();
 });
 
 const RentalRequest = mongoose.model('RentalRequest', rentalRequestSchema);
