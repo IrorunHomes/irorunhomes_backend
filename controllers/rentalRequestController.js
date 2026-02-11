@@ -113,10 +113,11 @@ const handleRequestProperty = async (req, res) => {
 // Get single rental request
 const HandleGetARequest = async (req, res) => {
   try {
-    const request = await RentalRequest.findOne({
-      _id: req.params.id,
-      tenant: req.user._id
-    }).populate('property', 'title address city price media images');
+    const {requestId} = req.params
+      const request = await RentalRequest.findById(requestId)
+          .populate('property', 'title address city price media images'
+              
+          );
 
     if (!request) {
       return res.status(404).json({ 
@@ -141,10 +142,9 @@ const HandleGetARequest = async (req, res) => {
 // Cancel rental request
 const HandleCancelRequest = async (req, res) => {
   try {
-    const request = await RentalRequest.findOne({
-      _id: req.params.id,
-      tenant: req.user._id
-    });
+const {requestId} = req.params
+      const request = await RentalRequest.findById(requestId)
+          .populate('property', 'title address city price media images');
 
     if (!request) {
       return res.status(404).json({ 
