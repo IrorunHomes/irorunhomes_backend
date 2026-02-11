@@ -74,11 +74,6 @@ const handleRequestProperty = async (req, res) => {
 
         await rentalRequest.save();
 
-        // Update property status
-        property.status = 'pending';
-        property.pendingRequests.push(rentalRequest._id);
-        await property.save();
-
         // Log history
         const history = new History({
             action: "requestProperty",
