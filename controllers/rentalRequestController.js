@@ -3,7 +3,7 @@ const RentalRequest = require('../models/rentalRequestModel');
 const Property = require('../models/propertyModel');
 const History = require('../models/historyModel');
 const cloudinary = require('../utils/cloudinary');
-const { sendEmail } = require('../utils/sendEmail');
+const { sendEmail, rentalRequestEmail } = require('../utils/sendEmail');
 const User = require('../models/userModel');
 const cron = require('node-cron');
 
@@ -13,7 +13,7 @@ const handleRequestProperty = async (req, res) => {
     try {
         // Get propertyId from URL params, not body
         const { propertyId } = req.params;
-        const { message, requestedMoveInDate, duration } = req.body;
+        const { fullName, message, requestedMoveInDate, duration } = req.body;
         const tenantId = req.user._id;
 
         // Validate required fields
@@ -47,6 +47,8 @@ const handleRequestProperty = async (req, res) => {
                 message: "Property is not available for rent" 
             });
         }
+
+        const name = await User.findOne({fullName: fullName})
 
         // Check if tenant already has a pending request
         const existingRequest = await RentalRequest.findOne({
@@ -84,18 +86,11 @@ const handleRequestProperty = async (req, res) => {
         });
         await history.save();
 
-        // Notify admin
-            await sendEmail({
-                to: 'sackagentng@gmail.com',
-                subject: 'New Rental Request Received',
-                htmlContent: `
-                    <h3>New Rental Request</h3>
-                    <p>Property: ${property.title}</p>
-                    <p>Tenant: ${req.user.fullName || req.user.email}</p>
-                    <p>Requested Move-in: ${new Date(requestedMoveInDate).toLocaleDateString()}</p>
-                    <p>Duration: ${duration || 12} months</p>
-                `
-            });
+        try {
+                await rentalRequestEmail(email, name);
+                } catch (emailError) {
+                    console.error('Email sending failed:', emailError.message);
+        }
 
         res.status(201).json({
             success: true,

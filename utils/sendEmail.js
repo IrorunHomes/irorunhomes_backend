@@ -169,8 +169,29 @@ const sendForgotPasswordEmail = async (to, resetLink) => {
 };
 
 
+ const rentalRequestEmail = async (to, name) => {
+    const subject = `New Rental Request Received ${name}!`;
+    const html = `
+        <h3>New Rental Request</h3>
+        <p>Property: ${property.title}</p>
+        <p>Tenant: ${req.user.fullName || req.user.email}</p>
+        <p>Requested Move-in: ${new Date(requestedMoveInDate).toLocaleDateString()}</p>
+        <p>Duration: ${duration || 12} months</p>
+    `;
+    
+    try {
+        // Corrected call signature to match sendEmail(to, subject, html)
+        return await sendEmail(to, subject, html);
+    } catch (err) {
+        console.error('❌ sendWelcomeEmail failed:', err);
+        throw err;
+    }
+};
+
+
 module.exports = {
     sendEmail,
+    rentalRequestEmail,
     sendOTPEmail,
     sendForgotPasswordEmail,
     sendWelcomeEmail,
