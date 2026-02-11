@@ -91,7 +91,7 @@ const handleRequestProperty = async (req, res) => {
 
         // Notify admin
             await sendEmail({
-                to: 'sackagent@gmail.com',
+                to: 'sackagentng@gmail.com',
                 subject: 'New Rental Request Received',
                 html: `
                     <h3>New Rental Request</h3>
