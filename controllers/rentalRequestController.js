@@ -93,7 +93,7 @@ const handleRequestProperty = async (req, res) => {
             await sendEmail({
                 to: 'sackagentng@gmail.com',
                 subject: 'New Rental Request Received',
-                html: `
+                htmlContent: `
                     <h3>New Rental Request</h3>
                     <p>Property: ${property.title}</p>
                     <p>Tenant: ${req.user.fullName || req.user.email}</p>
