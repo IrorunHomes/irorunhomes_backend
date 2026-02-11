@@ -13,7 +13,7 @@ const handleRequestProperty = async (req, res) => {
     try {
         // Get propertyId from URL params, not body
         const { propertyId } = req.params;
-        const { fullName, email, message, requestedMoveInDate, duration } = req.body;
+        const { fullName, e, message, requestedMoveInDate, duration } = req.body;
         const tenantId = req.user._id;
 
         // Validate required fields
@@ -48,7 +48,8 @@ const handleRequestProperty = async (req, res) => {
             });
         }
 
-        const name = await User.findOne({fullName: fullName, email: email})
+        const name = await User.findOne({ fullName: fullName })
+        const email = await User.findOne({ email: e })
 
         // Check if tenant already has a pending request
         const existingRequest = await RentalRequest.findOne({
