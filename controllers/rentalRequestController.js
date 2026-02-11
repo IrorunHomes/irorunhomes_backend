@@ -11,8 +11,25 @@ const cron = require('node-cron');
 // Tenant requests a property
 const handleRequestProperty = async (req, res) => {
     try {
-        const { propertyId, message, requestedMoveInDate, duration } = req.body;
+        // Get propertyId from URL params, not body
+        const { propertyId } = req.params;
+        const { message, requestedMoveInDate, duration } = req.body;
         const tenantId = req.user._id;
+
+        // Validate required fields
+        if (!propertyId) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Property ID is required" 
+            });
+        }
+
+        if (!message || !requestedMoveInDate) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Message and move-in date are required" 
+            });
+        }
 
         // Check if property exists
         const property = await Property.findById(propertyId);
@@ -65,27 +82,25 @@ const handleRequestProperty = async (req, res) => {
         // Log history
         const history = new History({
             action: "requestProperty",
-            user: tenantId,
-            property: propertyId,
-            details: {
-                requestId: rentalRequest._id,
-                message: message.substring(0, 50) + '...'
-            }
+            userId: tenantId,
+            propertyId: propertyId,
+            requestId: rentalRequest._id,
+            notes: message.substring(0, 50) + '...'
         });
         await history.save();
 
         // Notify admin
-        await sendEmail({
-            to: 'sackagent@gmail.com',
-            subject: 'New Rental Request Received',
-            html: `
-                <h3>New Rental Request</h3>
-                <p>Property: ${property.title}</p>
-                <p>Tenant: ${req.user.fullName}</p>
-                <p>Requested Move-in: ${new Date(requestedMoveInDate).toLocaleDateString()}</p>
-                <p>Duration: ${duration || 12} months</p>
-            `
-        });
+            await sendEmail({
+                to: 'sackagent@gmail.com',
+                subject: 'New Rental Request Received',
+                html: `
+                    <h3>New Rental Request</h3>
+                    <p>Property: ${property.title}</p>
+                    <p>Tenant: ${req.user.fullName || req.user.email}</p>
+                    <p>Requested Move-in: ${new Date(requestedMoveInDate).toLocaleDateString()}</p>
+                    <p>Duration: ${duration || 12} months</p>
+                `
+            });
 
         res.status(201).json({
             success: true,
@@ -94,12 +109,86 @@ const handleRequestProperty = async (req, res) => {
         });
 
     } catch (error) {
+        console.error("Error submitting rental request:", error);
         res.status(500).json({ 
             success: false, 
-            message: error.message 
+            message: error.message || "Failed to submit rental request"
         });
     }
 };
+
+
+
+// Get single rental request
+const HandleGetARequest = async (req, res) => {
+  try {
+    const request = await RentalRequest.findOne({
+      _id: req.params.id,
+      tenant: req.user._id
+    }).populate('property', 'title address city price media images');
+
+    if (!request) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Request not found" 
+      });
+    }
+
+    res.json({
+      success: true,
+      request
+    });
+  } catch (error) {
+    console.error("Error fetching rental request:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
+// Cancel rental request
+const HandleCancelRequest = async (req, res) => {
+  try {
+    const request = await RentalRequest.findOne({
+      _id: req.params.id,
+      tenant: req.user._id
+    });
+
+    if (!request) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Request not found' 
+      });
+    }
+
+    if (request.status !== 'pending') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Only pending requests can be cancelled' 
+      });
+    }
+
+    request.status = 'cancelled';
+    await request.save();
+
+    res.json({
+      success: true,
+      message: 'Request cancelled successfully',
+      request
+    });
+  } catch (error) {
+    console.error("Error cancelling rental request:", error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+};
+
+
+
+
 
 // Get tenant's rental requests and leases
 const handleGetTenantRequests = async (req, res) => {
@@ -857,6 +946,8 @@ module.exports = {
     // Tenant functions
     handleRequestProperty,
     handleGetTenantRequests,
+    HandleGetARequest,
+    HandleCancelRequest,
     handleUploadPaymentReceipt,
     handleGetTenantLease,
     handleSetAutoRenewal,
