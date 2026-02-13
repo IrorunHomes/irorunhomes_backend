@@ -115,9 +115,8 @@ const HandleGetARequest = async (req, res) => {
   try {
     const {requestId} = req.params
       const request = await RentalRequest.findById(requestId)
-          .populate('property', 'title address city price media images'
-              
-          );
+          .populate('property', 'title address city price apartmentType media images')
+          .populate('tenant', 'fullName phone email ')
 
     if (!request) {
       return res.status(404).json({ 
@@ -176,9 +175,6 @@ const {requestId} = req.params
     });
   }
 };
-
-
-
 
 
 // Get tenant's rental requests and leases
@@ -419,7 +415,7 @@ const handleGetAllRentalRequests = async (req, res) => {
 
         const requests = await RentalRequest.find(filter)
             .populate('property', 'title price address city')
-            .populate('tenant', 'name email phone')
+            .populate('tenant', 'fullName email phone')
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(parseInt(limit));
@@ -442,6 +438,7 @@ const handleGetAllRentalRequests = async (req, res) => {
         });
     }
 };
+
 
 
 // Admin processes rental request
