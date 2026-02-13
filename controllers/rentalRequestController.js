@@ -199,12 +199,20 @@ const handleGetTenantRequests = async (req, res) => {
     }
 };
 
+
 // Tenant uploads payment receipt
 const handleUploadPaymentReceipt = async (req, res) => {
     try {
         const { requestId } = req.params;
         const { amount, paymentMethod, referenceNumber } = req.body;
-        const receiptImage = req.file;
+        
+        // Check if file was uploaded
+        if (!req.file) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Payment receipt image is required" 
+            });
+        }
 
         const rentalRequest = await RentalRequest.findById(requestId)
             .populate('property', 'title price');
@@ -216,6 +224,7 @@ const handleUploadPaymentReceipt = async (req, res) => {
             });
         }
 
+        // Check if tenant owns this request
         if (rentalRequest.tenant.toString() !== req.user._id.toString()) {
             return res.status(403).json({ 
                 success: false, 
@@ -223,6 +232,7 @@ const handleUploadPaymentReceipt = async (req, res) => {
             });
         }
 
+        // Check if request is approved
         if (rentalRequest.status !== 'approved') {
             return res.status(400).json({ 
                 success: false, 
@@ -230,16 +240,39 @@ const handleUploadPaymentReceipt = async (req, res) => {
             });
         }
 
-        // Upload receipt to Cloudinary if image provided
+        // Check if payment already exists
+        if (rentalRequest.paymentDetails && rentalRequest.paymentDetails.receiptImage) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Payment receipt already uploaded. Please wait for verification." 
+            });
+        }
+
+        // Upload receipt to Cloudinary
         let receiptUrl = '';
         let receiptPublicId = '';
         
-        if (receiptImage) {
-            const uploadResult = await cloudinary.uploader.upload(receiptImage.path, {
-                folder: 'payment-receipts'
-            });
+        try {
+            // Convert buffer to base64 for Cloudinary upload
+            const fileStr = req.file.buffer.toString('base64');
+            const fileType = req.file.mimetype;
+            
+            const uploadResult = await cloudinary.uploader.upload(
+                `data:${fileType};base64,${fileStr}`,
+                {
+                    folder: 'payment-receipts',
+                    resource_type: 'auto'
+                }
+            );
+            
             receiptUrl = uploadResult.secure_url;
             receiptPublicId = uploadResult.public_id;
+        } catch (uploadError) {
+            console.error('Cloudinary upload error:', uploadError);
+            return res.status(500).json({ 
+                success: false, 
+                message: "Failed to upload receipt image" 
+            });
         }
 
         // Update payment details
@@ -255,33 +288,45 @@ const handleUploadPaymentReceipt = async (req, res) => {
         
         await rentalRequest.save();
 
-        // Notify admin
-        await sendEmail({
-            to: 'sackagent@gmail.com',
-            subject: 'Payment Receipt Uploaded',
-            html: `
-                <h3>Payment Receipt Uploaded</h3>
-                <p>Request ID: ${requestId}</p>
-                <p>Tenant: ${req.user.fullName}</p>
-                <p>Property: ${rentalRequest.property.title}</p>
-                <p>Amount: ₦${amount || rentalRequest.property.price}</p>
-                <p>Reference: ${referenceNumber}</p>
-            `
+        // Log to history
+        const history = new History({
+            action: "uploadPaymentReceipt",
+            user: req.user._id,
+            propertyId: rentalRequest.property._id,
+            tenantId: req.user._id,
+            requestId: rentalRequest._id,
+            amount: amount || rentalRequest.property.price,
+            reference: referenceNumber
+            
         });
+        await history.save();
 
         res.status(200).json({
             success: true,
             message: "Payment receipt uploaded successfully. Awaiting admin verification.",
-            request: rentalRequest
+            request: {
+                _id: rentalRequest._id,
+                status: rentalRequest.status,
+                paymentDetails: {
+                    amount: rentalRequest.paymentDetails.amount,
+                    method: rentalRequest.paymentDetails.method,
+                    reference: rentalRequest.paymentDetails.reference,
+                    paymentDate: rentalRequest.paymentDetails.paymentDate,
+                    verified: rentalRequest.paymentDetails.verified
+                }
+            }
         });
 
     } catch (error) {
+        console.error('Error uploading payment receipt:', error);
         res.status(500).json({ 
             success: false, 
-            message: error.message 
+            message: error.message || "Failed to upload payment receipt" 
         });
     }
 };
+
+
 
 // Get tenant's active lease
 const handleGetTenantLease = async (req, res) => {
