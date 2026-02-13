@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 
 const historySchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     tenantId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     propertyId: { type: mongoose.Schema.Types.ObjectId, ref: "Property", required: true },
     action: { type: String, required: true },
