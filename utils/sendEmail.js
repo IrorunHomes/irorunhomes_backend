@@ -341,7 +341,21 @@ const sendPaymentActivationEmail = async (tenantEmail, tenantName, leaseDetails)
  * Send email notification when a rental request is approved
  */
 const sendRequestApprovedEmail = async (tenantEmail, tenantName, property, request) => {
-    const subject = `✅ Rental Request Approved - ${property.title}`;
+    // Make sure property and request have all required fields
+    if (!property || !request) {
+        console.error('Missing property or request data for email');
+        return;
+    }
+
+    const subject = `✅ Rental Request Approved - ${property.title || 'Property'}`;
+    
+    // Ensure all values exist before using them
+    const propertyTitle = property.title || 'Property';
+    const propertyAddress = property.address || 'Address not available';
+    const propertyCity = property.city || '';
+    const propertyPrice = property.price ? `₦${property.price.toLocaleString()}` : 'N/A';
+    const moveInDate = request.requestedMoveInDate ? new Date(request.requestedMoveInDate).toLocaleDateString() : 'TBD';
+    const duration = request.duration || 12;
     
     const html = `
         <h2 style="color: #333; margin-top: 0;">Great News! Your Rental Request Has Been Approved 🎉</h2>
@@ -352,11 +366,11 @@ const sendRequestApprovedEmail = async (tenantEmail, tenantName, property, reque
         
         <div style="background-color: #f0f9f0; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #28a745;">
             <h3 style="color: #013220; margin-top: 0; margin-bottom: 15px;">🏠 Property Details</h3>
-            <p><strong>Property:</strong> ${property.title}</p>
-            <p><strong>Address:</strong> ${property.address}, ${property.city}, ${property.state}</p>
-            <p><strong>Annual Rent:</strong> ₦${property.price?.toLocaleString() || 'N/A'}</p>
-            <p><strong>Move-in Date:</strong> ${new Date(request.requestedMoveInDate).toLocaleDateString()}</p>
-            <p><strong>Lease Duration:</strong> ${request.duration || 12} months</p>
+            <p><strong>Property:</strong> ${propertyTitle}</p>
+            <p><strong>Address:</strong> ${propertyAddress}${propertyCity ? `, ${propertyCity}` : ''}</p>
+            <p><strong>Annual Rent:</strong> ${propertyPrice}</p>
+            <p><strong>Move-in Date:</strong> ${moveInDate}</p>
+            <p><strong>Lease Duration:</strong> ${duration} months</p>
         </div>
         
         <div style="background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 20px 0;">
@@ -373,42 +387,27 @@ const sendRequestApprovedEmail = async (tenantEmail, tenantName, property, reque
         </ol>
         
         <div style="margin: 30px 0; text-align: center;">
-            <a href="${BASE_URL}/dashboard/tenant/requests/${request._id}/payment" 
+            <a href="${process.env.CLIENT_URL}/dashboard/tenant/requests/${request._id}/payments" 
                style="padding: 12px 25px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
                 💳 Upload Payment Receipt
             </a>
         </div>
         
-        <p style="color: #666; font-size: 14px;">If you have any questions, please don't hesitate to contact our support team.</p>
-        
         <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;" />
         
         <p style="color: #888; font-size: 12px; text-align: center;">
-            © ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+            © ${new Date().getFullYear()} SackAgent. All rights reserved.
         </p>
     `;
+
+    // Verify html is not empty
+    if (!html || html.trim().length === 0) {
+        throw new Error('Email HTML content is empty');
+    }
 
     try {
         await sendEmail(tenantEmail, subject, html);
         console.log(`✅ Request approved email sent to ${tenantEmail}`);
-        
-        // Also notify admin about the approval
-        const adminSubject = `Request Approved - ${property.title}`;
-        const adminHtml = `
-            <h2 style="color: #333; margin-top: 0;">Rental Request Approved</h2>
-            <p>You have approved the rental request for:</p>
-            <ul>
-                <li><strong>Tenant:</strong> ${tenantName} (${tenantEmail})</li>
-                <li><strong>Property:</strong> ${property.title}</li>
-                <li><strong>Move-in Date:</strong> ${new Date(request.requestedMoveInDate).toLocaleDateString()}</li>
-                <li><strong>Duration:</strong> ${request.duration || 12} months</li>
-            </ul>
-            <p>The tenant has been notified and will proceed with payment.</p>
-        `;
-        
-        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
-        
-        return { success: true };
     } catch (error) {
         console.error('❌ Error sending approval email:', error);
         throw error;

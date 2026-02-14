@@ -14,10 +14,9 @@ const historySchema = new mongoose.Schema({
     amount: {type: Number},
     notes: { type: String, trim: true },
     reference: {type: String},
-    status: {
+    status: { 
         type: String,
-        enum: ["active", "archived"],
-        default: "active"
+        enum: ['pending', 'approved', 'rejected', 'cancelled', 'active_lease', "active", "archived"]
     },
 }, {
     timestamps: true
