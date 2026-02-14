@@ -3,7 +3,7 @@ const RentalRequest = require('../models/rentalRequestModel');
 const Property = require('../models/propertyModel');
 const History = require('../models/historyModel');
 const cloudinary = require('../utils/cloudinary');
-const { sendEmail, rentalRequestEmail } = require('../utils/sendEmail');
+const { sendRentalRequestEmail, sendRequestApprovedEmail, sendRequestRejectedEmail, sendPaymentVerifiedEmail, sendLeaseRenewalEmail, sendLeaseAutoRenewedEmail } = require('../utils/sendEmail');
 const User = require('../models/userModel');
 const cron = require('node-cron');
 
@@ -13,7 +13,7 @@ const handleRequestProperty = async (req, res) => {
     try {
         // Get propertyId from URL params, not body
         const { propertyId } = req.params;
-        const { fullName, e, message, requestedMoveInDate, duration } = req.body;
+        const { message, requestedMoveInDate, duration } = req.body;
         const tenantId = req.user._id;
 
         // Validate required fields
@@ -48,8 +48,14 @@ const handleRequestProperty = async (req, res) => {
             });
         }
 
-        const name = await User.findOne({ fullName: fullName })
-        const email = await User.findOne({ email: e })
+        // Get tenant details from the authenticated user
+        const tenant = await User.findById(tenantId);
+        if (!tenant) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Tenant not found" 
+            });
+        }
 
         // Check if tenant already has a pending request
         const existingRequest = await RentalRequest.findOne({
@@ -77,6 +83,14 @@ const handleRequestProperty = async (req, res) => {
 
         await rentalRequest.save();
 
+        // Prepare details for email
+        const requestDetails = {
+            property: property,
+            requestedMoveInDate: rentalRequest.requestedMoveInDate,
+            duration: rentalRequest.duration,
+            message: rentalRequest.message
+        };
+
         // Log history
         const history = new History({
             action: "requestProperty",
@@ -87,10 +101,18 @@ const handleRequestProperty = async (req, res) => {
         });
         await history.save();
 
+        // Send email notifications
         try {
-                await rentalRequestEmail(email, name);
-                } catch (emailError) {
-                    console.error('Email sending failed:', emailError.message);
+            await sendRentalRequestEmail(
+                tenant.email,
+                tenant.fullName,
+                property,
+                requestDetails
+            );
+            console.log('✅ Rental request emails sent successfully');
+        } catch (emailError) {
+            console.error('❌ Email sending failed:', emailError.message);
+            // Don't fail the request if email fails
         }
 
         res.status(201).json({
@@ -100,7 +122,7 @@ const handleRequestProperty = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error submitting rental request:", error);
+        console.error("❌ Error submitting rental request:", error);
         res.status(500).json({ 
             success: false, 
             message: error.message || "Failed to submit rental request"
@@ -485,8 +507,7 @@ const handleGetAllRentalRequests = async (req, res) => {
 };
 
 
-
-// Admin processes rental request
+// Process rental request (Approve/Reject)
 const handleProcessRentalRequest = async (req, res) => {
     try {
         const { requestId } = req.params;
@@ -525,6 +546,7 @@ const handleProcessRentalRequest = async (req, res) => {
                 startDate: rentalRequest.requestedMoveInDate,
                 monthlyRent: property.price,
                 securityDeposit: property.price * 2,
+                totalAmount: property.price * (rentalRequest.duration || 12),
                 paymentStatus: 'pending',
                 terms: 'Standard 1-year lease agreement'
             };
@@ -540,7 +562,7 @@ const handleProcessRentalRequest = async (req, res) => {
             
             // Calculate end date
             const endDate = new Date(rentalRequest.requestedMoveInDate);
-            endDate.setMonth(endDate.getMonth() + rentalRequest.duration);
+            endDate.setMonth(endDate.getMonth() + (rentalRequest.duration || 12));
             property.rentEndDate = endDate;
             
             // Remove from pending requests
@@ -557,33 +579,37 @@ const handleProcessRentalRequest = async (req, res) => {
 
         await property.save();
 
-        // Notify tenant
-        await sendEmail({
-            to: rentalRequest.tenant.email,
-            subject: `Rental Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-            html: `
-                <h3>Your rental request has been ${status}</h3>
-                <p>Property: ${property.title}</p>
-                <p>Status: ${status}</p>
-                <p>Admin Response: ${adminResponse || 'No additional notes'}</p>
-                ${status === 'approved' ? 
-                    '<p>Please proceed with payment to complete the rental process.</p>' : 
-                    '<p>You can browse other available properties.</p>'
-                }
-            `
-        });
+        // Send email notifications
+        try {
+            if (status === 'approved') {
+                await sendRequestApprovedEmail(
+                    rentalRequest.tenant.email,
+                    rentalRequest.tenant.fullName,
+                    property,
+                    rentalRequest
+                );
+            } else if (status === 'rejected') {
+                await sendRequestRejectedEmail(
+                    rentalRequest.tenant.email,
+                    rentalRequest.tenant.fullName,
+                    property,
+                    rentalRequest
+                );
+            }
+        } catch (emailError) {
+            console.error(`❌ Failed to send ${status} email:`, emailError.message);
+            // Don't fail the request if email fails
+        }
 
         // Log history
         const history = new History({
             action: "processRentalRequest",
-            user: adminId,
-            property: property._id,
-            tenant: rentalRequest.tenant._id,
-            details: {
-                requestId: rentalRequest._id,
-                status: status,
-                notes: adminNotes
-            }
+            userId: adminId,
+            propertyId: property._id,
+            tenantId: rentalRequest.tenant._id,
+            requestId: rentalRequest._id,
+            status: status,
+            notes: adminNotes
         });
         await history.save();
 
@@ -594,6 +620,7 @@ const handleProcessRentalRequest = async (req, res) => {
         });
 
     } catch (error) {
+        console.error("❌ Error processing rental request:", error);
         res.status(500).json({ 
             success: false, 
             message: error.message 
@@ -633,6 +660,11 @@ const handleVerifyPaymentAndActivateLease = async (req, res) => {
             });
         }
 
+        // Calculate end date if not set
+        const startDate = rentalRequest.leaseInfo?.startDate || rentalRequest.requestedMoveInDate;
+        const endDate = rentalRequest.leaseInfo?.endDate || 
+            new Date(new Date(startDate).setMonth(new Date(startDate).getMonth() + (rentalRequest.duration || 12)));
+
         // Verify payment
         rentalRequest.paymentDetails.verified = true;
         rentalRequest.paymentDetails.verifiedBy = adminId;
@@ -642,7 +674,8 @@ const handleVerifyPaymentAndActivateLease = async (req, res) => {
         rentalRequest.status = 'active_lease';
         rentalRequest.leaseInfo.paymentStatus = 'paid';
         rentalRequest.leaseInfo.signedAt = new Date();
-        rentalRequest.leaseInfo.terms += `\n\nPayment verified by admin. Notes: ${verificationNotes || 'None'}`;
+        rentalRequest.leaseInfo.endDate = endDate;
+        rentalRequest.leaseInfo.terms += `\n\nPayment verified by admin on ${new Date().toLocaleDateString()}. Notes: ${verificationNotes || 'None'}`;
         rentalRequest.updatedAt = new Date();
         
         await rentalRequest.save();
@@ -650,40 +683,39 @@ const handleVerifyPaymentAndActivateLease = async (req, res) => {
         // Update property with lease dates
         const property = await Property.findById(rentalRequest.property._id);
         if (property) {
-            property.rentStartDate = rentalRequest.leaseInfo.startDate;
-            property.rentEndDate = rentalRequest.leaseInfo.endDate || 
-                new Date(new Date(rentalRequest.leaseInfo.startDate).setMonth(
-                    new Date(rentalRequest.leaseInfo.startDate).getMonth() + rentalRequest.duration
-                ));
+            property.rentStartDate = startDate;
+            property.rentEndDate = endDate;
+            property.status = 'rented';
+            property.currentTenant = rentalRequest.tenant._id;
             await property.save();
         }
 
-        // Notify tenant
-        await sendEmail({
-            to: rentalRequest.tenant.email,
-            subject: 'Payment Verified & Lease Activated',
-            html: `
-                <h3>Payment Verified Successfully!</h3>
-                <p>Your payment has been verified and your lease is now active.</p>
-                <p>Property: ${property.title}</p>
-                <p>Lease Start Date: ${new Date(rentalRequest.leaseInfo.startDate).toLocaleDateString()}</p>
-                <p>Lease Duration: ${rentalRequest.duration} months</p>
-                <p>Monthly Rent: ₦${rentalRequest.leaseInfo.monthlyRent}</p>
-                <p>You can now access your lease details in your dashboard.</p>
-            `
-        });
+        // Send payment verification email
+        try {
+            await sendPaymentVerifiedEmail(
+                rentalRequest.tenant.email,
+                rentalRequest.tenant.fullName,
+                property,
+                {
+                    ...rentalRequest.leaseInfo.toObject(),
+                    _id: rentalRequest._id,
+                    duration: rentalRequest.duration,
+                    requestedMoveInDate: rentalRequest.requestedMoveInDate
+                }
+            );
+        } catch (emailError) {
+            console.error('❌ Failed to send payment verification email:', emailError.message);
+        }
 
         // Log history
         const history = new History({
             action: "activateLease",
-            user: adminId,
-            property: rentalRequest.property._id,
-            tenant: rentalRequest.tenant._id,
-            details: {
-                requestId: rentalRequest._id,
-                monthlyRent: rentalRequest.leaseInfo.monthlyRent,
-                duration: rentalRequest.duration
-            }
+            userId: adminId,
+            propertyId: rentalRequest.property._id,
+            tenantId: rentalRequest.tenant._id,
+            requestId: rentalRequest._id,
+            monthlyRent: rentalRequest.leaseInfo.monthlyRent,
+            duration: rentalRequest.duration
         });
         await history.save();
 
@@ -694,6 +726,7 @@ const handleVerifyPaymentAndActivateLease = async (req, res) => {
         });
 
     } catch (error) {
+        console.error("❌ Error verifying payment:", error);
         res.status(500).json({ 
             success: false, 
             message: error.message 
@@ -701,11 +734,12 @@ const handleVerifyPaymentAndActivateLease = async (req, res) => {
     }
 };
 
+
 // Admin renews lease
 const handleRenewLease = async (req, res) => {
     try {
         const { requestId } = req.params;
-        const { renewDuration, newMonthlyRent } = req.body;
+        const { renewDuration, newMonthlyRent, adminNotes } = req.body;
         const adminId = req.user._id;
 
         const rentalRequest = await RentalRequest.findById(requestId)
@@ -735,6 +769,10 @@ const handleRenewLease = async (req, res) => {
         const newEndDate = new Date(currentEndDate);
         newEndDate.setMonth(newEndDate.getMonth() + (renewDuration || 12));
         
+        // Store old values for email
+        const oldEndDate = currentEndDate;
+        const oldMonthlyRent = rentalRequest.leaseInfo.monthlyRent;
+        
         // Update lease info
         rentalRequest.leaseInfo.endDate = newEndDate;
         rentalRequest.duration += (renewDuration || 12);
@@ -745,6 +783,9 @@ const handleRenewLease = async (req, res) => {
         }
         
         rentalRequest.leaseInfo.renewalOffered = false;
+        rentalRequest.adminNotes = adminNotes ? 
+            (rentalRequest.adminNotes ? `${rentalRequest.adminNotes}\n\nRenewal Notes: ${adminNotes}` : `Renewal Notes: ${adminNotes}`) 
+            : rentalRequest.adminNotes;
         rentalRequest.updatedAt = new Date();
         
         await rentalRequest.save();
@@ -756,18 +797,27 @@ const handleRenewLease = async (req, res) => {
             await property.save();
         }
 
-        // Notify tenant
-        await sendEmail({
-            to: rentalRequest.tenant.email,
-            subject: 'Lease Renewed Successfully',
-            html: `
-                <h3>Lease Renewed</h3>
-                <p>Your lease for ${property.title} has been renewed.</p>
-                <p>New End Date: ${newEndDate.toLocaleDateString()}</p>
-                <p>New Duration: ${renewDuration || 12} additional months</p>
-                ${newMonthlyRent ? `<p>New Monthly Rent: ₦${newMonthlyRent}</p>` : ''}
-            `
-        });
+        // Send lease renewal email
+        try {
+            await sendLeaseRenewalEmail(
+                rentalRequest.tenant.email,
+                rentalRequest.tenant.fullName,
+                property,
+                {
+                    ...rentalRequest.leaseInfo.toObject(),
+                    _id: rentalRequest._id,
+                    oldEndDate,
+                    oldMonthlyRent,
+                    newEndDate,
+                    newMonthlyRent: newMonthlyRent || oldMonthlyRent,
+                    renewDuration: renewDuration || 12
+                }
+            );
+            console.log(`✅ Lease renewal email sent to ${rentalRequest.tenant.email}`);
+        } catch (emailError) {
+            console.error('❌ Failed to send lease renewal email:', emailError.message);
+            // Don't fail the request if email fails
+        }
 
         // Log history
         const history = new History({
@@ -777,8 +827,11 @@ const handleRenewLease = async (req, res) => {
             tenant: rentalRequest.tenant._id,
             details: {
                 requestId: rentalRequest._id,
+                oldEndDate: oldEndDate,
                 newEndDate: newEndDate,
-                newDuration: renewDuration || 12
+                oldMonthlyRent: oldMonthlyRent,
+                newMonthlyRent: newMonthlyRent || oldMonthlyRent,
+                renewDuration: renewDuration || 12
             }
         });
         await history.save();
@@ -790,6 +843,7 @@ const handleRenewLease = async (req, res) => {
         });
 
     } catch (error) {
+        console.error("❌ Error renewing lease:", error);
         res.status(500).json({ 
             success: false, 
             message: error.message 
@@ -862,7 +916,7 @@ const handleGetExpiringLeases = async (req, res) => {
 
 // ============ CRON JOB FUNCTIONS ============
 
-// Check for expiring leases and send notifications
+// Check expiring leases and send notifications
 const handleCheckExpiringLeases = async () => {
     try {
         const thirtyDaysFromNow = new Date();
@@ -879,16 +933,16 @@ const handleCheckExpiringLeases = async () => {
 
         for (const lease of expiringLeases) {
             // Send renewal notification to tenant
-            await sendEmail({
-                to: lease.tenant.email,
-                subject: 'Lease Renewal Notice',
-                html: `
-                    <h3>Lease Expiring Soon</h3>
-                    <p>Your lease for ${lease.property.title} is expiring on ${lease.leaseInfo.endDate.toLocaleDateString()}</p>
-                    <p>Please contact the admin to discuss renewal options.</p>
-                    <p>If you wish to renew, please update your auto-renewal preference in your dashboard.</p>
-                `
-            });
+            try {
+                await sendLeaseRenewalEmail(
+                    lease.tenant.email,
+                    lease.tenant.fullName,
+                    lease.property,
+                    lease
+                );
+            } catch (emailError) {
+                console.error('❌ Failed to send renewal email:', emailError.message);
+            }
 
             // Update flag
             lease.leaseInfo.renewalOffered = true;
@@ -896,8 +950,10 @@ const handleCheckExpiringLeases = async () => {
             lease.leaseInfo.renewalDeadline.setDate(lease.leaseInfo.renewalDeadline.getDate() - 15);
             await lease.save();
         }
+        
+        console.log(`✅ Checked ${expiringLeases.length} expiring leases`);
     } catch (error) {
-        console.error('Error checking expiring leases:', error);
+        console.error('❌ Error checking expiring leases:', error);
     }
 };
 
@@ -925,16 +981,18 @@ const handleAutoExpireLeases = async () => {
                     rentEndDate: newEndDate
                 });
                 
-                // Notify tenant
-                await sendEmail({
-                    to: lease.tenant.email,
-                    subject: 'Lease Auto-Renewed',
-                    html: `
-                        <h3>Lease Auto-Renewed</h3>
-                        <p>Your lease for ${lease.property.title} has been automatically renewed for another year.</p>
-                        <p>New End Date: ${newEndDate.toLocaleDateString()}</p>
-                    `
-                });
+                // Send auto-renewal notification
+                try {
+                    await sendLeaseAutoRenewedEmail(
+                        lease.tenant.email,
+                        lease.tenant.fullName,
+                        lease.property,
+                        lease,
+                        newEndDate
+                    );
+                } catch (emailError) {
+                    console.error('❌ Failed to send auto-renewal email:', emailError.message);
+                }
             } else {
                 // Mark lease as expired
                 lease.status = 'expired_lease';
@@ -949,22 +1007,25 @@ const handleAutoExpireLeases = async () => {
                     approvedRequests: []
                 });
                 
-                // Notify tenant
-                await sendEmail({
-                    to: lease.tenant.email,
-                    subject: 'Lease Expired',
-                    html: `
-                        <h3>Lease Expired</h3>
-                        <p>Your lease for ${lease.property.title} has expired on ${lease.leaseInfo.endDate.toLocaleDateString()}</p>
-                        <p>Please vacate the property and arrange for security deposit return.</p>
-                    `
-                });
+                // Send lease expired notification
+                try {
+                    await sendLeaseExpiredEmail(
+                        lease.tenant.email,
+                        lease.tenant.fullName,
+                        lease.property,
+                        lease
+                    );
+                } catch (emailError) {
+                    console.error('❌ Failed to send lease expired email:', emailError.message);
+                }
             }
             
             await lease.save();
         }
+        
+        console.log(`✅ Processed ${expiredLeases.length} expired leases`);
     } catch (error) {
-        console.error('Error auto-expiring leases:', error);
+        console.error('❌ Error auto-expiring leases:', error);
     }
 };
 

@@ -344,7 +344,7 @@ const handleVerifyOTP = async (req, res) => {
 
     // Send welcome email
     try {
-      await sendWelcomeEmail(email,  user.name);
+      await sendWelcomeEmail(email,  user.fullName);
     } catch (emailError) {
       console.error('Welcome email error:', emailError);
     }

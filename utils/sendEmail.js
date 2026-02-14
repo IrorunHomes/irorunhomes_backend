@@ -10,6 +10,7 @@ const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
 const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL;
 const APP_NAME = 'SackAgent';
 const BASE_URL = process.env.CLIENT_URL || 'http://localhost:8000'; 
+const ADMIN_EMAIL = 'sackagentng@gmail.com';
 
 if (!SENDGRID_API_KEY || !SENDGRID_FROM_EMAIL) {
     console.error("❌ FATAL: SENDGRID_API_KEY or SENDGRID_FROM_EMAIL is missing in environment variables.");
@@ -85,6 +86,53 @@ async function sendEmail(
     }
 }
 
+/**
+ * Send email to multiple recipients
+ */
+async function sendEmailToMultiple(
+    recipients, 
+    subject, 
+    htmlContent, 
+    text = ''
+) {
+    try {
+        if (!SENDGRID_API_KEY) {
+            console.warn(`📧 SendGrid API key is missing. Skipping emails.`);
+            return { success: false, message: "API key not set." };
+        }
+        
+        // Convert single recipient to array if needed
+        const toList = Array.isArray(recipients) ? recipients : [recipients];
+        
+        console.log(`📧 Sending email to ${toList.length} recipients with subject: ${subject}`);
+        
+        const fullHtml = emailWrapper(htmlContent);
+
+        const msg = {
+            to: toList,
+            from: {
+                name: APP_NAME,
+                email: SENDGRID_FROM_EMAIL
+            },
+            subject: subject,
+            text: text,
+            html: fullHtml,
+        };
+
+        const [response] = await sgMail.send(msg);
+        
+        console.log('✅ Email sent successfully to multiple recipients');
+        console.log('📧 Status Code:', response.statusCode);
+        
+        return {
+            success: true,
+            statusCode: response.statusCode,
+        };
+    } catch (error) {
+        console.error('❌ Error sending email to multiple recipients:', error.message);
+        throw new Error(`Failed to send email: ${error.message}`);
+    }
+}
 
 // --- Helper Functions ---
 
@@ -112,7 +160,7 @@ const sendOTPEmail = async (to, otp) => {
         return await sendEmail(to, subject, html, text);
     } catch (error) {
         console.error('❌ sendVerificationEmail failed:', error);
-        throw error; // Re-throw the error for the controller to handle
+        throw error;
     }
 };
 
@@ -135,7 +183,6 @@ const sendForgotPasswordEmail = async (to, resetLink) => {
     `;
     
     try {
-        // Corrected call signature to match sendEmail(to, subject, html)
         return await sendEmail(to, subject, html);
     } catch (err) {
         console.error('❌ sendForgotPasswordEmail failed:', err);
@@ -146,12 +193,12 @@ const sendForgotPasswordEmail = async (to, resetLink) => {
 /**
  * Send Welcome Email
  */
- const sendWelcomeEmail = async (to, name) => {
+const sendWelcomeEmail = async (to, fullName) => {
     const subject = `Welcome to ${APP_NAME}!`;
     const html = `
-        <h2 style="color: #333; margin-top: 0;">Welcome Aboard, ${name}!</h2>
+        <h2 style="color: #333; margin-top: 0;">Welcome Aboard, ${fullName}!</h2>
         <p>We're thrilled to have you join the ${APP_NAME} community.</p>
-        <p>You can now log in and start exploring appartments and properties.</p>
+        <p>You can now log in and start exploring apartments and properties.</p>
         <div style="text-align: center; margin: 30px 0;">
             <a href="${BASE_URL}/login"
                 style="padding: 10px 20px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;"
@@ -160,7 +207,6 @@ const sendForgotPasswordEmail = async (to, resetLink) => {
     `;
     
     try {
-        // Corrected call signature to match sendEmail(to, subject, html)
         return await sendEmail(to, subject, html);
     } catch (err) {
         console.error('❌ sendWelcomeEmail failed:', err);
@@ -168,34 +214,569 @@ const sendForgotPasswordEmail = async (to, resetLink) => {
     }
 };
 
-
- const rentalRequestEmail = async (to, name) => {
-    const subject = `New Rental Request Received ${name}!`;
-    const html = `
-        <h3>New Rental Request</h3>
-        <p>Property: ${property.title}</p>
-        <p>Tenant: ${req.user.fullName || req.user.email}</p>
-        <p>Requested Move-in: ${new Date(requestedMoveInDate).toLocaleDateString()}</p>
-        <p>Duration: ${duration || 12} months</p>
-    `;
+/**
+ * Send Rental Request Email (to admin and tenant)
+ */
+const sendRentalRequestEmail = async (tenantEmail, tenantName, propertyDetails, requestDetails) => {
+    const { property, requestedMoveInDate, duration } = requestDetails;
     
+    // Email to admin
+    const adminSubject = `New Rental Request Received - ${APP_NAME}`;
+    const adminHtml = `
+        <h2 style="color: #333; margin-top: 0;">New Rental Request Received</h2>
+        <p><strong>Tenant:</strong> ${tenantName} (${tenantEmail})</p>
+        <p><strong>Property:</strong> ${property.title}</p>
+        <p><strong>Property Address:</strong> ${property.address}, ${property.city}</p>
+        <p><strong>Requested Move-in Date:</strong> ${new Date(requestedMoveInDate).toLocaleDateString()}</p>
+        <p><strong>Lease Duration:</strong> ${duration || 12} months</p>
+        <p><strong>Annual Rent:</strong> ₦${property.price?.toLocaleString() || 'N/A'}</p>
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/dashboard/super-admin/requests" 
+               style="padding: 10px 20px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                View Request in Dashboard
+            </a>
+        </div>
+    `;
+
+    // Email to tenant (confirmation)
+    const tenantSubject = `Rental Request Received - ${property.title}`;
+    const tenantHtml = `
+        <h2 style="color: #333; margin-top: 0;">Thank You for Your Interest!</h2>
+        <p>Dear ${tenantName},</p>
+        <p>We have received your rental request for:</p>
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>${property.title}</strong></p>
+            <p>📍 ${property.address}, ${property.city}</p>
+            <p>📅 Move-in Date: ${new Date(requestedMoveInDate).toLocaleDateString()}</p>
+            <p>⏱️ Duration: ${duration || 12} months</p>
+            <p>💰 Annual Rent: ₦${property.price?.toLocaleString() || 'N/A'}</p>
+        </div>
+        <p>Our team will review your request and get back to you within 24-48 hours.</p>
+        <p>You can track the status of your request in your dashboard.</p>
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/dashboard/tenant/requests" 
+               style="padding: 10px 20px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                Track Your Request
+            </a>
+        </div>
+    `;
+
     try {
-        // Corrected call signature to match sendEmail(to, subject, html)
-        return await sendEmail(to, subject, html);
+        // Send to admin (and additional emails if needed)
+        const adminRecipients = [ADMIN_EMAIL];
+        
+        await sendEmailToMultiple(adminRecipients, adminSubject, adminHtml);
+        
+        // Send confirmation to tenant
+        await sendEmail(tenantEmail, tenantSubject, tenantHtml);
+        
+        console.log('✅ Rental request emails sent successfully');
+        return { success: true };
     } catch (err) {
-        console.error('❌ sendWelcomeEmail failed:', err);
+        console.error('❌ sendRentalRequestEmail failed:', err);
         throw err;
     }
 };
 
+/**
+ * Send Payment Verification & Lease Activation Email
+ */
+const sendPaymentActivationEmail = async (tenantEmail, tenantName, leaseDetails) => {
+    const subject = `Payment Verified & Lease Activated - ${APP_NAME}`;
+    const html = `
+        <h2 style="color: #333; margin-top: 0;">Payment Verified Successfully!</h2>
+        <p>Dear ${tenantName},</p>
+        <p>Your payment has been verified and your lease is now active.</p>
+        
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p><strong>Property:</strong> ${leaseDetails.propertyTitle}</p>
+            <p><strong>Lease Start Date:</strong> ${new Date(leaseDetails.startDate).toLocaleDateString()}</p>
+            <p><strong>Lease End Date:</strong> ${new Date(leaseDetails.endDate).toLocaleDateString()}</p>
+            <p><strong>Lease Duration:</strong> ${leaseDetails.duration} months</p>
+            <p><strong>Monthly Rent:</strong> ₦${leaseDetails.monthlyRent?.toLocaleString()}</p>
+            <p><strong>Security Deposit:</strong> ₦${leaseDetails.securityDeposit?.toLocaleString()}</p>
+        </div>
+        
+        <p>You can now access your lease details and manage your rental in your dashboard.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/dashboard/tenant/leases" 
+               style="padding: 10px 20px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                View Your Lease
+            </a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px;">Thank you for choosing ${APP_NAME}!</p>
+    `;
+
+    const text = `Payment Verified Successfully! Your lease for ${leaseDetails.propertyTitle} is now active.`;
+
+    try {
+        // Send to tenant
+        await sendEmail(tenantEmail, subject, html, text);
+        
+        // Also notify admin
+        const adminSubject = `Lease Activated - ${leaseDetails.propertyTitle}`;
+        const adminHtml = `
+            <h2 style="color: #333; margin-top: 0;">Lease Activated</h2>
+            <p>Lease has been activated for:</p>
+            <p><strong>Tenant:</strong> ${tenantName} (${tenantEmail})</p>
+            <p><strong>Property:</strong> ${leaseDetails.propertyTitle}</p>
+            <p><strong>Start Date:</strong> ${new Date(leaseDetails.startDate).toLocaleDateString()}</p>
+            <p><strong>End Date:</strong> ${new Date(leaseDetails.endDate).toLocaleDateString()}</p>
+        `;
+        
+        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
+        
+        console.log('✅ Payment activation emails sent successfully');
+        return { success: true };
+    } catch (error) {
+        console.error('❌ sendPaymentActivationEmail failed:', error);
+        throw error;
+    }
+};
+
+
+/**
+ * Send email notification when a rental request is approved
+ */
+const sendRequestApprovedEmail = async (tenantEmail, tenantName, property, request) => {
+    const subject = `✅ Rental Request Approved - ${property.title}`;
+    
+    const html = `
+        <h2 style="color: #333; margin-top: 0;">Great News! Your Rental Request Has Been Approved 🎉</h2>
+        
+        <p>Dear <strong>${tenantName}</strong>,</p>
+        
+        <p>We are pleased to inform you that your rental request for the following property has been <strong style="color: #28a745;">APPROVED</strong>!</p>
+        
+        <div style="background-color: #f0f9f0; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #28a745;">
+            <h3 style="color: #013220; margin-top: 0; margin-bottom: 15px;">🏠 Property Details</h3>
+            <p><strong>Property:</strong> ${property.title}</p>
+            <p><strong>Address:</strong> ${property.address}, ${property.city}, ${property.state}</p>
+            <p><strong>Annual Rent:</strong> ₦${property.price?.toLocaleString() || 'N/A'}</p>
+            <p><strong>Move-in Date:</strong> ${new Date(request.requestedMoveInDate).toLocaleDateString()}</p>
+            <p><strong>Lease Duration:</strong> ${request.duration || 12} months</p>
+        </div>
+        
+        <div style="background-color: #e7f3ff; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>📝 Admin Response:</strong></p>
+            <p style="margin-top: 5px;">${request.adminResponse || 'Please proceed with payment to activate your lease.'}</p>
+        </div>
+        
+        <p><strong>Next Steps:</strong></p>
+        <ol style="margin-bottom: 25px;">
+            <li>Make payment for the property (annual rent + security deposit)</li>
+            <li>Upload your payment receipt using the button below</li>
+            <li>Wait for admin verification (usually within 24-48 hours)</li>
+            <li>Once verified, your lease will be activated immediately</li>
+        </ol>
+        
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/dashboard/tenant/requests/${request._id}/payment" 
+               style="padding: 12px 25px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                💳 Upload Payment Receipt
+            </a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px;">If you have any questions, please don't hesitate to contact our support team.</p>
+        
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;" />
+        
+        <p style="color: #888; font-size: 12px; text-align: center;">
+            © ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+        </p>
+    `;
+
+    try {
+        await sendEmail(tenantEmail, subject, html);
+        console.log(`✅ Request approved email sent to ${tenantEmail}`);
+        
+        // Also notify admin about the approval
+        const adminSubject = `Request Approved - ${property.title}`;
+        const adminHtml = `
+            <h2 style="color: #333; margin-top: 0;">Rental Request Approved</h2>
+            <p>You have approved the rental request for:</p>
+            <ul>
+                <li><strong>Tenant:</strong> ${tenantName} (${tenantEmail})</li>
+                <li><strong>Property:</strong> ${property.title}</li>
+                <li><strong>Move-in Date:</strong> ${new Date(request.requestedMoveInDate).toLocaleDateString()}</li>
+                <li><strong>Duration:</strong> ${request.duration || 12} months</li>
+            </ul>
+            <p>The tenant has been notified and will proceed with payment.</p>
+        `;
+        
+        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
+        
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error sending approval email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Send email notification when a rental request is rejected
+ */
+const sendRequestRejectedEmail = async (tenantEmail, tenantName, property, request) => {
+    const subject = `📋 Rental Request Update - ${property.title}`;
+    
+    const html = `
+        <h2 style="color: #333; margin-top: 0;">Update on Your Rental Request</h2>
+        
+        <p>Dear <strong>${tenantName}</strong>,</p>
+        
+        <p>Regarding your request for <strong>${property.title}</strong>:</p>
+        
+        <div style="background-color: #fff3f3; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #dc3545;">
+            <h3 style="color: #721c24; margin-top: 0;">Status: Not Approved</h3>
+        </div>
+        
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0;"><strong>📝 Reason:</strong></p>
+            <p style="margin-top: 5px;">${request.adminResponse || 'Your request was not approved at this time. This could be due to the property being no longer available or other applicants being selected.'}</p>
+        </div>
+        
+        <p>Don't be discouraged! There are many other great properties available on our platform.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/properties" 
+               style="padding: 12px 25px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                🔍 Browse Other Properties
+            </a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px;">If you have any questions about this decision, please contact our support team.</p>
+        
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;" />
+        
+        <p style="color: #888; font-size: 12px; text-align: center;">
+            © ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+        </p>
+    `;
+
+    try {
+        await sendEmail(tenantEmail, subject, html);
+        console.log(`✅ Request rejected email sent to ${tenantEmail}`);
+        
+        // Notify admin about the rejection
+        const adminSubject = `Request Rejected - ${property.title}`;
+        const adminHtml = `
+            <h2 style="color: #333; margin-top: 0;">Rental Request Rejected</h2>
+            <p>You have rejected the rental request for:</p>
+            <ul>
+                <li><strong>Tenant:</strong> ${tenantName} (${tenantEmail})</li>
+                <li><strong>Property:</strong> ${property.title}</li>
+                <li><strong>Reason:</strong> ${request.adminResponse || 'No reason provided'}</li>
+            </ul>
+        `;
+        
+        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
+        
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error sending rejection email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Send email notification when payment is verified and lease activated
+ */
+const sendPaymentVerifiedEmail = async (tenantEmail, tenantName, property, leaseDetails) => {
+    const subject = `✅ Payment Verified & Lease Activated - ${property.title}`;
+    
+    const monthlyRent = leaseDetails.monthlyRent || property.price;
+    const securityDeposit = leaseDetails.securityDeposit || property.price * 2;
+    const startDate = leaseDetails.startDate || leaseDetails.requestedMoveInDate;
+    const endDate = leaseDetails.endDate || new Date(new Date(startDate).setMonth(new Date(startDate).getMonth() + (leaseDetails.duration || 12)));
+    
+    const html = `
+        <h2 style="color: #333; margin-top: 0;">Payment Verified Successfully! 🎉</h2>
+        
+        <p>Dear <strong>${tenantName}</strong>,</p>
+        
+        <p>Great news! Your payment has been verified and your lease is now <strong style="color: #28a745;">ACTIVE</strong>.</p>
+        
+        <div style="background-color: #f0f9f0; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #28a745;">
+            <h3 style="color: #013220; margin-top: 0; margin-bottom: 15px;">📋 Lease Summary</h3>
+            
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="padding: 8px 0;"><strong>Property:</strong></td>
+                    <td style="padding: 8px 0;">${property.title}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0;"><strong>Address:</strong></td>
+                    <td style="padding: 8px 0;">${property.address}, ${property.city}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0;"><strong>Lease Start Date:</strong></td>
+                    <td style="padding: 8px 0;">${new Date(startDate).toLocaleDateString()}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0;"><strong>Lease End Date:</strong></td>
+                    <td style="padding: 8px 0;">${new Date(endDate).toLocaleDateString()}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0;"><strong>Lease Duration:</strong></td>
+                    <td style="padding: 8px 0;">${leaseDetails.duration || 12} months</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0;"><strong>Monthly Rent:</strong></td>
+                    <td style="padding: 8px 0;">₦${monthlyRent.toLocaleString()}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0;"><strong>Security Deposit:</strong></td>
+                    <td style="padding: 8px 0;">₦${securityDeposit.toLocaleString()}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0;"><strong>Total Paid:</strong></td>
+                    <td style="padding: 8px 0;">₦${(monthlyRent * (leaseDetails.duration || 12) + securityDeposit).toLocaleString()}</td>
+                </tr>
+            </table>
+        </div>
+        
+        <p><strong>What's Next?</strong></p>
+        <ul style="margin-bottom: 25px;">
+            <li>You can now access your full lease details in your dashboard</li>
+            <li>Your landlord/agent will contact you to arrange key collection</li>
+            <li>Review your lease terms and conditions carefully</li>
+            <li>Set up auto-renewal preferences if desired</li>
+        </ul>
+        
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/dashboard/tenant/leases/${leaseDetails._id}" 
+               style="padding: 12px 25px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                📄 View Your Lease
+            </a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px;">Welcome to your new home! If you have any questions, please contact your property manager.</p>
+        
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;" />
+        
+        <p style="color: #888; font-size: 12px; text-align: center;">
+            © ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+        </p>
+    `;
+
+    try {
+        await sendEmail(tenantEmail, subject, html);
+        console.log(`✅ Payment verified email sent to ${tenantEmail}`);
+        
+        // Notify admin about the activation
+        const adminSubject = `Lease Activated - ${property.title}`;
+        const adminHtml = `
+            <h2 style="color: #333; margin-top: 0;">Lease Activated</h2>
+            <p>Lease has been activated for:</p>
+            <ul>
+                <li><strong>Tenant:</strong> ${tenantName} (${tenantEmail})</li>
+                <li><strong>Property:</strong> ${property.title}</li>
+                <li><strong>Start Date:</strong> ${new Date(startDate).toLocaleDateString()}</li>
+                <li><strong>End Date:</strong> ${new Date(endDate).toLocaleDateString()}</li>
+            </ul>
+        `;
+        
+        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
+        
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error sending payment verification email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Send lease renewal notification
+ */
+const sendLeaseRenewalEmail = async (tenantEmail, tenantName, property, lease) => {
+    const subject = `⚠️ Lease Expiring Soon - ${property.title}`;
+    
+    const endDate = new Date(lease.leaseInfo.endDate);
+    const daysLeft = Math.ceil((endDate - new Date()) / (1000 * 60 * 60 * 24));
+    
+    const html = `
+        <h2 style="color: #333; margin-top: 0;">Your Lease is Expiring Soon</h2>
+        
+        <p>Dear <strong>${tenantName}</strong>,</p>
+        
+        <p>This is a friendly reminder that your lease for <strong>${property.title}</strong> is expiring in <strong style="color: #dc3545;">${daysLeft} days</strong>.</p>
+        
+        <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #ffc107;">
+            <p><strong>Current Lease End Date:</strong> ${endDate.toLocaleDateString()}</p>
+            <p><strong>Days Remaining:</strong> ${daysLeft}</p>
+        </div>
+        
+        <p><strong>What are your options?</strong></p>
+        <ul style="margin-bottom: 25px;">
+            <li><strong>Renew your lease</strong> - Continue renting with the same terms or negotiate new ones</li>
+            <li><strong>Set auto-renewal</strong> - Enable auto-renewal in your dashboard to automatically renew</li>
+            <li><strong>Move out</strong> - If you plan to move out, please notify us at least 30 days in advance</li>
+        </ul>
+        
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/dashboard/tenant/leases/${lease._id}/renew" 
+               style="padding: 12px 25px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-right: 10px;">
+                🔄 Review Renewal Options
+            </a>
+            <a href="${BASE_URL}/dashboard/tenant/leases/${lease._id}" 
+               style="padding: 12px 25px; background-color: #6c757d; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                📄 View Lease Details
+            </a>
+        </div>
+        
+        <p style="color: #666; font-size: 14px;">If you have already made arrangements for renewal, please disregard this message.</p>
+        
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;" />
+        
+        <p style="color: #888; font-size: 12px; text-align: center;">
+            © ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+        </p>
+    `;
+
+    try {
+        await sendEmail(tenantEmail, subject, html);
+        console.log(`✅ Lease renewal email sent to ${tenantEmail}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error sending lease renewal email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Send lease auto-renewed notification
+ */
+const sendLeaseAutoRenewedEmail = async (tenantEmail, tenantName, property, lease, newEndDate) => {
+    const subject = `🔄 Lease Auto-Renewed - ${property.title}`;
+    
+    const html = `
+        <h2 style="color: #333; margin-top: 0;">Your Lease Has Been Auto-Renewed</h2>
+        
+        <p>Dear <strong>${tenantName}</strong>,</p>
+        
+        <p>Your lease for <strong>${property.title}</strong> has been automatically renewed for another year based on your auto-renewal preference.</p>
+        
+        <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; margin: 25px 0;">
+            <h3 style="color: #013220; margin-top: 0;">Updated Lease Terms</h3>
+            <p><strong>New End Date:</strong> ${new Date(newEndDate).toLocaleDateString()}</p>
+            <p><strong>Monthly Rent:</strong> ₦${lease.leaseInfo.monthlyRent?.toLocaleString() || property.price?.toLocaleString()}</p>
+            <p><strong>Duration:</strong> Additional 12 months</p>
+        </div>
+        
+        <p>If you did not intend to renew or have questions about your lease, please contact our support team immediately.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/dashboard/tenant/leases/${lease._id}" 
+               style="padding: 12px 25px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                📄 View Updated Lease
+            </a>
+        </div>
+        
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;" />
+        
+        <p style="color: #888; font-size: 12px; text-align: center;">
+            © ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+        </p>
+    `;
+
+    try {
+        await sendEmail(tenantEmail, subject, html);
+        console.log(`✅ Lease auto-renewed email sent to ${tenantEmail}`);
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error sending lease auto-renewed email:', error);
+        throw error;
+    }
+};
+
+/**
+ * Send lease expired notification
+ */
+const sendLeaseExpiredEmail = async (tenantEmail, tenantName, property, lease) => {
+    const subject = `⚠️ Lease Expired - ${property.title}`;
+    
+    const html = `
+        <h2 style="color: #333; margin-top: 0;">Your Lease Has Expired</h2>
+        
+        <p>Dear <strong>${tenantName}</strong>,</p>
+        
+        <p>Your lease for <strong>${property.title}</strong> expired on <strong>${new Date(lease.leaseInfo.endDate).toLocaleDateString()}</strong>.</p>
+        
+        <div style="background-color: #f8d7da; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #dc3545;">
+            <p><strong>Important Actions Required:</strong></p>
+            <ul style="margin-bottom: 0;">
+                <li>Please vacate the property within the timeframe specified in your lease</li>
+                <li>Arrange for return of your security deposit</li>
+                <li>Schedule a final inspection with your landlord/agent</li>
+            </ul>
+        </div>
+        
+        <p>If you believe this is an error or have already made arrangements for renewal, please contact us immediately.</p>
+        
+        <div style="margin: 30px 0; text-align: center;">
+            <a href="${BASE_URL}/contact" 
+               style="padding: 12px 25px; background-color: #013220; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                📞 Contact Support
+            </a>
+        </div>
+        
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;" />
+        
+        <p style="color: #888; font-size: 12px; text-align: center;">
+            © ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.
+        </p>
+    `;
+
+    try {
+        await sendEmail(tenantEmail, subject, html);
+        console.log(`✅ Lease expired email sent to ${tenantEmail}`);
+        
+        // Notify admin
+        const adminSubject = `Lease Expired - ${property.title}`;
+        const adminHtml = `
+            <h2 style="color: #333; margin-top: 0;">Lease Expired</h2>
+            <p>Lease has expired for:</p>
+            <ul>
+                <li><strong>Tenant:</strong> ${tenantName} (${tenantEmail})</li>
+                <li><strong>Property:</strong> ${property.title}</li>
+                <li><strong>Expiry Date:</strong> ${new Date(lease.leaseInfo.endDate).toLocaleDateString()}</li>
+            </ul>
+            <p>The property has been marked as available.</p>
+        `;
+        
+        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
+        
+        return { success: true };
+    } catch (error) {
+        console.error('❌ Error sending lease expired email:', error);
+        throw error;
+    }
+};
+
+module.exports = {
+
+};
 
 module.exports = {
     sendEmail,
-    rentalRequestEmail,
+    sendEmailToMultiple,
     sendOTPEmail,
     sendForgotPasswordEmail,
     sendWelcomeEmail,
+    sendRentalRequestEmail,
+    sendPaymentActivationEmail,
+    sendLeaseRenewalEmail,
+    sendRequestApprovedEmail,
+    sendRequestRejectedEmail,
+    sendPaymentVerifiedEmail,
+    sendLeaseAutoRenewedEmail,
+    sendLeaseExpiredEmail,
+    ADMIN_EMAIL
 };
+
+
 
 
 
