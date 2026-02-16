@@ -6,6 +6,7 @@ const historySchema = new mongoose.Schema({
     tenantId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     requestId: { type: mongoose.Schema.Types.ObjectId, ref: "RentalRequest" },
     propertyId: { type: mongoose.Schema.Types.ObjectId, ref: "Property", required: true },
+    targetUser: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     action: { type: String, required: true },
     startDate: { type: Date, default: Date.now },
     monthlyRent: { type: Number},
@@ -13,6 +14,7 @@ const historySchema = new mongoose.Schema({
     endDate: { type: Date },
     amount: {type: Number},
     notes: { type: String, trim: true },
+    reason: { type: String, trim: true },
     reference: {type: String},
     status: { 
         type: String,

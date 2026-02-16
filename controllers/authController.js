@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { sendOTPEmail, sendWelcomeEmail } = require('../utils/sendEmail');
+const RentalRequest = require('../models/rentalRequestModel');
+const History = require('../models/historyModel');
 
 
 // Generate short-lived access token
@@ -223,26 +225,326 @@ const handlegetUserProfile = async (req, res) => {
 
 // GET ALL REGISTERED USERS
 const handleGetAllUsers = async (req, res) => {
-  try {
-    const users = await User.find();
-    if (!users || users.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found"
-      });
+    try {
+        const { 
+            role, 
+            status, 
+            search, 
+            page = 1, 
+            limit = 20,
+            sortBy = 'createdAt',
+            sortOrder = 'desc'
+        } = req.query;
+
+        const userRole = req.user.role;
+        const query = {};
+
+        if (userRole === 'admin') {
+            query.role = 'tenant';
+        } else if (userRole === 'super_admin') {
+            query.role = { $ne: 'super_admin' };
+            
+        }
+
+        // Status filters
+        if (status === 'verified') {
+            query.isEmailVerified = true;
+            query.kycVerified = true;
+        } else if (status === 'pending') {
+            query.$or = [
+                { isEmailVerified: false },
+                { kycVerified: false }
+            ];
+        } else if (status === 'suspended') {
+            query.isActive = false;
+        }
+
+        // Search functionality
+        if (search) {
+            query.$or = [
+                { fullName: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                { phone: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        // Build sort object
+        const sort = {};
+        sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+        // Execute query with pagination
+        const users = await User.find(query)
+            .select('-password -resetPasswordToken -resetPasswordExpire')
+            .sort(sort)
+            .skip((page - 1) * limit)
+            .limit(parseInt(limit));
+
+        // Get total count for pagination
+        const total = await User.countDocuments(query);
+
+        // Get additional stats for each user
+        const enhancedUsers = await Promise.all(users.map(async (user) => {
+            const userObj = user.toObject();
+            
+            // Get active leases count
+            const activeLeases = await RentalRequest.countDocuments({
+                tenant: user._id,
+                status: 'active_lease'
+            });
+
+            // Get pending requests count
+            const pendingRequests = await RentalRequest.countDocuments({
+                tenant: user._id,
+                status: 'pending'
+            });
+
+            // Get total requests
+            const totalRequests = await RentalRequest.countDocuments({
+                tenant: user._id
+            });
+
+            return {
+                ...userObj,
+                stats: {
+                    activeLeases,
+                    pendingRequests,
+                    totalRequests
+                }
+            };
+        }));
+
+        // Calculate summary statistics
+        const stats = {
+            totalUsers: total,
+            totalTenants: await User.countDocuments({ role: 'tenant' }),
+            totalAdmins: await User.countDocuments({ role: 'admin' }),
+            verifiedUsers: await User.countDocuments({ 
+                isEmailVerified: true, 
+                kycVerified: true,
+                ...(userRole === 'admin' ? { role: 'tenant' } : {})
+            }),
+            pendingVerification: await User.countDocuments({
+                $or: [
+                    { isEmailVerified: false },
+                    { kycVerified: false }
+                ],
+                ...(userRole === 'admin' ? { role: 'tenant' } : {})
+            }),
+            activeLeases: await RentalRequest.countDocuments({ status: 'active_lease' })
+        };
+
+        res.status(200).json({
+            success: true,
+            message: "Users retrieved successfully",
+            data: {
+                users: enhancedUsers,
+                pagination: {
+                    total,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    pages: Math.ceil(total / limit)
+                },
+                stats
+            }
+        });
+
+    } catch (error) {
+        console.error("❌ Error fetching users:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to fetch users"
+        });
     }
-    res.status(200).json({
-      success: true,
-      message: "User accounts found",
-      users
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
 };
+
+
+//Get single user by ID (Admin/Super Admin)
+const handleGetUserById = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const userRole = req.user.role;
+
+        const user = await User.findById(userId)
+            .select('-password -resetPasswordToken -resetPasswordExpire');
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Check permissions
+        if (userRole === 'admin' && user.role !== 'tenant') {
+            return res.status(403).json({
+                success: false,
+                message: "Admin can only view tenant accounts"
+            });
+        }
+
+        if (userRole === 'super_admin' && user.role === 'super_admin') {
+            return res.status(403).json({
+                success: false,
+                message: "Super admin cannot view other super admin accounts"
+            });
+        }
+
+        // Get user's rental history
+        const rentalHistory = await RentalRequest.find({
+            tenant: user._id
+        })
+            .populate('property', 'title address price')
+            .sort({ createdAt: -1 })
+            .limit(10);
+
+        // Get statistics
+        const stats = {
+            totalRequests: await RentalRequest.countDocuments({ tenant: user._id }),
+            pendingRequests: await RentalRequest.countDocuments({ 
+                tenant: user._id, 
+                status: 'pending' 
+            }),
+            approvedRequests: await RentalRequest.countDocuments({ 
+                tenant: user._id, 
+                status: 'approved' 
+            }),
+            activeLeases: await RentalRequest.countDocuments({ 
+                tenant: user._id, 
+                status: 'active_lease' 
+            }),
+            rejectedRequests: await RentalRequest.countDocuments({ 
+                tenant: user._id, 
+                status: 'rejected' 
+            }),
+            totalPayments: await RentalRequest.countDocuments({ 
+                tenant: user._id,
+                'paymentDetails.verified': true 
+            })
+        };
+
+        res.status(200).json({
+            success: true,
+            message: "User retrieved successfully",
+            data: {
+                user,
+                stats,
+                rentalHistory
+            }
+        });
+
+    } catch (error) {
+        console.error("❌ Error fetching user:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to fetch user"
+        });
+    }
+};
+
+// Update user status (activate/suspend)
+const handleUpdateUserStatus = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { isActive, reason } = req.body;
+        const adminId = req.user._id;
+
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        // Check permissions
+        if (req.user.role === 'admin' && user.role !== 'tenant') {
+            return res.status(403).json({
+                success: false,
+                message: "Admin can only update tenant accounts"
+            });
+        }
+
+        user.isActive = isActive;
+        await user.save();
+
+        // Log to history
+        await History.create({
+            action: isActive ? "activateUser" : "suspendUser",
+            userId: adminId,
+            targetUser: userId,
+            notes: `User ${isActive ? 'activated' : 'suspended'} by admin`
+        });
+
+        res.status(200).json({
+            success: true,
+            message: `User ${isActive ? 'activated' : 'suspended'} successfully`,
+            data: {
+                _id: user._id,
+                fullName: user.fullName,
+                email: user.email,
+                isActive: user.isActive
+            }
+        });
+
+    } catch (error) {
+        console.error("❌ Error updating user status:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to update user status"
+        });
+    }
+};
+
+//Verify user KYC
+const handleVerifyUserKYC = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { verified, notes } = req.body;
+        const adminId = req.user._id;
+
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        user.kycVerified = verified;
+        if (verified) {
+            user.kycSubmittedAt = new Date();
+        }
+        await user.save();
+
+        // Log to history
+        await History.create({
+            action: verified ? "verifyKYC" : "rejectKYC",
+            userId: adminId,
+            targetUser: userId,
+            notes: notes || `KYC ${verified ? 'verified' : 'rejected'}`
+        });
+
+        res.status(200).json({
+            success: true,
+            message: `KYC ${verified ? 'verified' : 'rejected'} successfully`,
+            data: {
+                _id: user._id,
+                fullName: user.fullName,
+                kycVerified: user.kycVerified
+            }
+        });
+
+    } catch (error) {
+        console.error("❌ Error verifying KYC:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message || "Failed to verify KYC"
+        });
+    }
+};
+
 
 // Update user profile
 const handleUpdateUserProfile = async (req, res) => {
@@ -439,5 +741,8 @@ module.exports = {
     resendOTP,
     handlegetUserProfile,
     handleGetAllUsers,
-    handleUpdateUserProfile
+    handleUpdateUserProfile,
+    handleGetUserById,
+    handleUpdateUserStatus,
+    handleVerifyUserKYC
 };
