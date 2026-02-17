@@ -382,6 +382,42 @@ const handleGetTenantLease = async (req, res) => {
     }
 };
 
+
+// Get tenant's lease by ID
+const handleGetTenantLeaseById = async (req, res) => {
+    try {
+        const tenantId = req.user._id;
+        const { requestId } = req.params;
+
+        const leaseRequest = await RentalRequest.findOne({ 
+            _id: requestId, 
+            tenant: tenantId,
+            status: 'active_lease' 
+        })
+            .populate('property', 'title address city media')
+            .populate('assignedAdmin', 'name email');
+
+        if (!leaseRequest) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Lease not found" 
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Lease retrieved successfully",
+            lease: leaseRequest
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+};
+
+
 // Tenant sets auto-renewal preference
 const handleSetAutoRenewal = async (req, res) => {
     try {
@@ -1045,6 +1081,7 @@ module.exports = {
     handleUploadPaymentReceipt,
     handleGetTenantLease,
     handleSetAutoRenewal,
+    handleGetTenantLeaseById,
 
     // Admin functions
     handleRegisterAdmin,
