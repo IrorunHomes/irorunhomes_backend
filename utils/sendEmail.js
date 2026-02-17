@@ -178,8 +178,7 @@ const sendForgotPasswordEmail = async (to, otp) => {
             </div>
         </div>
         <p>This OTP will expire in <strong>10 minutes</strong>.</p>
-        </div>
-        <p style="font-size: 0.9rem; color: #888;">If the button above does not work, copy and paste the following link into your browser:</p>
+        <p style="font-size: 0.9rem; color: #888;">If you didn't request this, please ignore this email.</p>
     `;
     
     try {
