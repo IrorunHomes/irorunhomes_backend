@@ -6,7 +6,7 @@ const cloudinary = require('../utils/cloudinary');
 const { sendRentalRequestEmail, sendRequestApprovedEmail, sendRequestRejectedEmail, sendPaymentVerifiedEmail, sendLeaseRenewalEmail, sendLeaseAutoRenewedEmail } = require('../utils/sendEmail');
 const User = require('../models/userModel');
 const cron = require('node-cron');
-
+const bcrypt = require('bcryptjs');
 
 // Tenant requests a property
 const handleRequestProperty = async (req, res) => {
@@ -470,13 +470,15 @@ const handleRegisterAdmin = async (req, res) => {
         success: false,
         message: 'User already exists with this email'
       });
-    }
+      }
+      
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create new admin user
     const admin = new User({
       fullName,
       email,
-      password,
+      password: hashedPassword,
       role: role || 'admin',
       isVerified: true,
       kycVerified: true,
