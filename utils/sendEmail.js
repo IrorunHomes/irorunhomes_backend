@@ -180,9 +180,9 @@ const sendForgotPasswordEmail = async (to, otp) => {
         <p>This OTP will expire in <strong>10 minutes</strong>.</p>
         <p style="font-size: 0.9rem; color: #888;">If you didn't request this, please ignore this email.</p>
     `;
-    
+        const text = `Your ${APP_NAME} Password Reset code is: ${otp}. This code expires in 10 minutes.`;
     try {
-        return await sendEmail(to, subject, html);
+        return await sendEmail(to, subject, html, text);
     } catch (err) {
         console.error('❌ sendForgotPasswordEmail failed:', err);
         throw err;

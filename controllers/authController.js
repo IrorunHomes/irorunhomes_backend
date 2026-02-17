@@ -733,31 +733,37 @@ const resendOTP = async (req, res) => {
 
 // Forgot Password
 const handleForgotPassword = async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({ success: false, message: "Email is required" });
-      }
-      const user = await User.findOne({ email });
-      if (!user) {
-        return res.status(404).json({ success: false, message: "User not found with this email" });
-      }
+  try {
+    const { email } = req.body;
+    
+    // Always return the same message regardless of whether email exists
+    const message = "If an account exists with this email, a password reset code has been sent.";
+    
+    if (!email) {
+      return res.status(200).json({ success: true, message });
+    }
 
+    const user = await User.findOne({ email });
+    
+    if (user) {
       const otp = crypto.randomInt(100000, 999999).toString();
       user.resetPasswordToken = otp;
       user.resetPasswordExpire = Date.now() + 60 * 60 * 1000;
       await user.save();
-
-      // Send reset password email
+      
       try {
         await sendForgotPasswordEmail(email, otp);
       } catch (emailError) {
-        console.error('Failed to send reset password email:', emailError);
+        console.error('Failed to send email:', emailError);
       }
-      res.status(200).json({ success: true, message: "Password reset token sent to email" });
-    } catch (error) {
-      console.error('Forgot password error:', error);
-      res.status(500).json({ success: false, message: "Internal server error" });
+    }
+    
+    // Always return success to prevent email enumeration
+    res.status(200).json({ success: true, message });
+    
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
