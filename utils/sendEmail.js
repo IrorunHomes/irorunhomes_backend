@@ -204,9 +204,10 @@ const sendWelcomeEmail = async (to, fullName) => {
             >Go to Login</a>
         </div>
     `;
-    
+        const text = `Welcome to ${APP_NAME}, ${fullName}! You can now log in to your account.`;
+
     try {
-        return await sendEmail(to, subject, html);
+        return await sendEmail(to, subject, html, text);
     } catch (err) {
         console.error('❌ sendWelcomeEmail failed:', err);
         throw err;
@@ -236,6 +237,7 @@ const sendRentalRequestEmail = async (tenantEmail, tenantName, propertyDetails, 
             </a>
         </div>
     `;
+        const text = `New rental request received from ${tenantName} (${tenantEmail}) for property ${property.title}. Please review in the admin dashboard.`;
 
     // Email to tenant (confirmation)
     const tenantSubject = `Rental Request Received - ${property.title}`;
@@ -264,10 +266,10 @@ const sendRentalRequestEmail = async (tenantEmail, tenantName, propertyDetails, 
         // Send to admin (and additional emails if needed)
         const adminRecipients = [ADMIN_EMAIL];
         
-        await sendEmailToMultiple(adminRecipients, adminSubject, adminHtml);
+        await sendEmailToMultiple(adminRecipients, adminSubject, adminHtml, text);
         
         // Send confirmation to tenant
-        await sendEmail(tenantEmail, tenantSubject, tenantHtml);
+        await sendEmail(tenantEmail, tenantSubject, tenantHtml, text);
         
         console.log('✅ Rental request emails sent successfully');
         return { success: true };
@@ -324,8 +326,9 @@ const sendPaymentActivationEmail = async (tenantEmail, tenantName, leaseDetails)
             <p><strong>Start Date:</strong> ${new Date(leaseDetails.startDate).toLocaleDateString()}</p>
             <p><strong>End Date:</strong> ${new Date(leaseDetails.endDate).toLocaleDateString()}</p>
         `;
+        const adminText = `Lease activated for tenant ${tenantName} (${tenantEmail}) for property ${leaseDetails.propertyTitle}. Start Date: ${new Date(leaseDetails.startDate).toLocaleDateString()}, End Date: ${new Date(leaseDetails.endDate).toLocaleDateString()}`;
         
-        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
+        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml, adminText);
         
         console.log('✅ Payment activation emails sent successfully');
         return { success: true };
@@ -399,13 +402,15 @@ const sendRequestApprovedEmail = async (tenantEmail, tenantName, property, reque
         </p>
     `;
 
+    const text = `Congratulations ${tenantName}! Your rental request for ${propertyTitle} has been approved. Please proceed with payment to activate your lease.`;
+
     // Verify html is not empty
     if (!html || html.trim().length === 0) {
         throw new Error('Email HTML content is empty');
     }
 
     try {
-        await sendEmail(tenantEmail, subject, html);
+        await sendEmail(tenantEmail, subject, html, text);
         console.log(`✅ Request approved email sent to ${tenantEmail}`);
     } catch (error) {
         console.error('❌ Error sending approval email:', error);
@@ -453,8 +458,10 @@ const sendRequestRejectedEmail = async (tenantEmail, tenantName, property, reque
         </p>
     `;
 
+    const text = `Dear ${tenantName}, your rental request for ${property.title} was not approved. Reason: ${request.adminResponse || 'No reason provided'}. Please check our platform for other available properties.`;
+
     try {
-        await sendEmail(tenantEmail, subject, html);
+        await sendEmail(tenantEmail, subject, html, text);
         console.log(`✅ Request rejected email sent to ${tenantEmail}`);
         
         // Notify admin about the rejection
@@ -559,8 +566,10 @@ const sendPaymentVerifiedEmail = async (tenantEmail, tenantName, property, lease
         </p>
     `;
 
+    const text = `Congratulations ${tenantName}! Your payment has been verified and your lease for ${property.title} is now active. Please check your dashboard for lease details.`;
+
     try {
-        await sendEmail(tenantEmail, subject, html);
+        await sendEmail(tenantEmail, subject, html, text);
         console.log(`✅ Payment verified email sent to ${tenantEmail}`);
         
         // Notify admin about the activation
@@ -575,8 +584,10 @@ const sendPaymentVerifiedEmail = async (tenantEmail, tenantName, property, lease
                 <li><strong>End Date:</strong> ${new Date(endDate).toLocaleDateString()}</li>
             </ul>
         `;
+
+        const adminText = `Lease activated for tenant ${tenantName} (${tenantEmail}) for property ${property.title}. Start Date: ${new Date(startDate).toLocaleDateString()}, End Date: ${new Date(endDate).toLocaleDateString()}`;
         
-        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
+        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml, adminText);
         
         return { success: true };
     } catch (error) {
@@ -633,8 +644,10 @@ const sendLeaseRenewalEmail = async (tenantEmail, tenantName, property, lease) =
         </p>
     `;
 
+    const text = `Dear ${tenantName}, your lease for ${property.title} is expiring in ${daysLeft} days. Please review your renewal options in your dashboard.`;
+
     try {
-        await sendEmail(tenantEmail, subject, html);
+        await sendEmail(tenantEmail, subject, html, text);
         console.log(`✅ Lease renewal email sent to ${tenantEmail}`);
         return { success: true };
     } catch (error) {
@@ -679,8 +692,10 @@ const sendLeaseAutoRenewedEmail = async (tenantEmail, tenantName, property, leas
         </p>
     `;
 
+    const text = `Dear ${tenantName}, your lease for ${property.title} has been auto-renewed. New end date: ${new Date(newEndDate).toLocaleDateString()}. Please check your dashboard for details.`;
+
     try {
-        await sendEmail(tenantEmail, subject, html);
+        await sendEmail(tenantEmail, subject, html, text);
         console.log(`✅ Lease auto-renewed email sent to ${tenantEmail}`);
         return { success: true };
     } catch (error) {
@@ -727,8 +742,10 @@ const sendLeaseExpiredEmail = async (tenantEmail, tenantName, property, lease) =
         </p>
     `;
 
+    const text = `Dear ${tenantName}, your lease for ${property.title} has expired on ${new Date(lease.leaseInfo.endDate).toLocaleDateString()}. Please vacate the property and contact support if you have questions.`;
+
     try {
-        await sendEmail(tenantEmail, subject, html);
+        await sendEmail(tenantEmail, subject, html, text);
         console.log(`✅ Lease expired email sent to ${tenantEmail}`);
         
         // Notify admin
@@ -743,8 +760,10 @@ const sendLeaseExpiredEmail = async (tenantEmail, tenantName, property, lease) =
             </ul>
             <p>The property has been marked as available.</p>
         `;
+
+        const adminText = `Lease expired for tenant ${tenantName} (${tenantEmail}) for property ${property.title}. Expiry Date: ${new Date(lease.leaseInfo.endDate).toLocaleDateString()}. Property marked as available.`;
         
-        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml);
+        await sendEmail(ADMIN_EMAIL, adminSubject, adminHtml, adminText);
         
         return { success: true };
     } catch (error) {
@@ -753,9 +772,6 @@ const sendLeaseExpiredEmail = async (tenantEmail, tenantName, property, lease) =
     }
 };
 
-module.exports = {
-
-};
 
 module.exports = {
     sendEmail,
