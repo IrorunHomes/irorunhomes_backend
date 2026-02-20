@@ -22,7 +22,9 @@ app.set('trust proxy', 1);
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
-  'https://sackagent-frontend.vercel.app',
+  'https://sackagent.vercel.app',
+  "https://sackagent.com",
+  "https://sackagentng.com",
   'http://localhost:5173',
 ];
 // === Middleware ===
