@@ -1,22 +1,22 @@
-const sgMail = require('@sendgrid/mail');
+const { Resend } = require('resend');
 const dotenv = require('dotenv');
 
 // Load environment variables from .env file
 dotenv.config();
 
-
 // --- Configuration ---
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
-const SENDGRID_FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL;
-const APP_NAME = 'SackAgent';
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL;
+const APP_NAME = 'Irorun Homes';
 const BASE_URL = process.env.CLIENT_URL || 'http://localhost:8000'; 
-const ADMIN_EMAIL = 'sackagentng@gmail.com';
+const ADMIN_EMAIL = 'irorunhomesng@gmail.com';
 
-if (!SENDGRID_API_KEY || !SENDGRID_FROM_EMAIL) {
-    console.error("❌ FATAL: SENDGRID_API_KEY or SENDGRID_FROM_EMAIL is missing in environment variables.");
+let resend = null;
+if (!RESEND_API_KEY || !RESEND_FROM_EMAIL) {
+    console.error("❌ FATAL: RESEND_API_KEY or RESEND_FROM_EMAIL is missing in environment variables.");
 } else {
-    // SendGrid with API key
-    sgMail.setApiKey(SENDGRID_API_KEY);
+    // Initialize Resend with API key
+    resend = new Resend(RESEND_API_KEY);
 }
 
 // --- Email Templates ---
@@ -43,8 +43,8 @@ async function sendEmail(
     text = ''
 ) {
     try {
-        if (!SENDGRID_API_KEY) {
-            console.warn(`📧 SendGrid API key is missing. Skipping email to: ${to}`);
+        if (!resend) {
+            console.warn(`📧 Resend API key is missing. Skipping email to: ${to}`);
             return { success: false, message: "API key not set." };
         }
         
@@ -52,34 +52,29 @@ async function sendEmail(
         
         const fullHtml = emailWrapper(htmlContent);
 
-        const msg = {
-            to: to,
-            from: {
-                name: APP_NAME,
-                email: SENDGRID_FROM_EMAIL
-            },
+        const { data, error } = await resend.emails.send({
+            from: `${APP_NAME} <${RESEND_FROM_EMAIL}>`,
+            to: [to],
             subject: subject,
-            text: text,
             html: fullHtml,
-        };
-
-        // Note: sgMail.send() returns a promise that resolves to an array of results
-        const [response] = await sgMail.send(msg);
+            text: text,
+        });
         
-        console.log('✅ Email sent successfully via SendGrid API');
-        console.log('📧 Status Code:', response.statusCode);
+        if (error) {
+            console.error('❌ Error sending email via Resend API:', error);
+            throw new Error(`Failed to send email: ${error.message}`);
+        }
+        
+        console.log('✅ Email sent successfully via Resend API');
+        console.log('📧 Email ID:', data?.id);
         
         return {
             success: true,
-            statusCode: response.statusCode,
+            id: data?.id,
         };
     } catch (error) {
-        // Log detailed error from SendGrid API
-        console.error('❌ Error sending email via SendGrid API:', error.message);
-        
-        if (error.response) {
-            console.error('SendGrid API Response Body:', error.response.body);
-        }
+        // Log detailed error from Resend API
+        console.error('❌ Error sending email via Resend API:', error.message);
         
         // Throw a simplified error for the calling controller to handle
         throw new Error(`Failed to send email: ${error.message}`);
@@ -96,8 +91,8 @@ async function sendEmailToMultiple(
     text = ''
 ) {
     try {
-        if (!SENDGRID_API_KEY) {
-            console.warn(`📧 SendGrid API key is missing. Skipping emails.`);
+        if (!resend) {
+            console.warn(`📧 Resend API key is missing. Skipping emails.`);
             return { success: false, message: "API key not set." };
         }
         
@@ -108,25 +103,32 @@ async function sendEmailToMultiple(
         
         const fullHtml = emailWrapper(htmlContent);
 
-        const msg = {
-            to: toList,
-            from: {
-                name: APP_NAME,
-                email: SENDGRID_FROM_EMAIL
-            },
-            subject: subject,
-            text: text,
-            html: fullHtml,
-        };
-
-        const [response] = await sgMail.send(msg);
+        // Resend doesn't support multiple recipients in one API call directly
+        // Send individually to each recipient
+        const results = [];
+        for (const recipient of toList) {
+            const { data, error } = await resend.emails.send({
+                from: `${APP_NAME} <${RESEND_FROM_EMAIL}>`,
+                to: [recipient],
+                subject: subject,
+                html: fullHtml,
+                text: text,
+            });
+            
+            if (error) {
+                console.error(`❌ Error sending email to ${recipient}:`, error);
+                results.push({ recipient, success: false, error: error.message });
+            } else {
+                console.log(`✅ Email sent successfully to ${recipient}`);
+                results.push({ recipient, success: true, id: data?.id });
+            }
+        }
         
-        console.log('✅ Email sent successfully to multiple recipients');
-        console.log('📧 Status Code:', response.statusCode);
+        const allSuccess = results.every(r => r.success);
         
         return {
-            success: true,
-            statusCode: response.statusCode,
+            success: allSuccess,
+            results: results,
         };
     } catch (error) {
         console.error('❌ Error sending email to multiple recipients:', error.message);
@@ -398,7 +400,7 @@ const sendRequestApprovedEmail = async (tenantEmail, tenantName, property, reque
         <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;" />
         
         <p style="color: #888; font-size: 12px; text-align: center;">
-            © ${new Date().getFullYear()} SackAgent. All rights reserved.
+            © ${new Date().getFullYear()} Irorun Homes. All rights reserved.
         </p>
     `;
 
@@ -772,7 +774,6 @@ const sendLeaseExpiredEmail = async (tenantEmail, tenantName, property, lease) =
     }
 };
 
-
 module.exports = {
     sendEmail,
     sendEmailToMultiple,
@@ -789,119 +790,3 @@ module.exports = {
     sendLeaseExpiredEmail,
     ADMIN_EMAIL
 };
-
-
-
-
-
-// // mailService.js
-// import nodemailer from 'nodemailer';
-// import dotenv from 'dotenv';
-
-// dotenv.config();
-
-// // Email wrapper for consistent branding
-// const emailWrapper = (content) => `
-//   <div style="font-family: sans-serif; line-height: 1.5; color: #333;">
-//     <div style="padding: 1rem; border: 1px solid #eee; border-radius: 8px; max-width: 600px; margin: auto;">
-//       <div style="text-align: center; margin-bottom: 1rem;">
-//         <img src="https://yourdomain.com/logo.png" alt="Company Logo" style="height: 50px;" />
-//         <h2 style="color: #0057B7;">Property Guru platform</h2>
-//       </div>
-//       ${content}
-//       <hr style="margin: 2rem 0;" />
-//       <p style="font-size: 0.9rem; color: #888;">If you didn't request this email, you can safely ignore it.</p>
-//     </div>
-//   </div>
-// `;
-
-// /**
-//  * Create a single transporter
-//  * – use Gmail with app password or your own SMTP host
-//  */
-// const transporter = nodemailer.createTransport({
-//   service: 'gmail', // or configure host/port manually
-//   auth: {
-//     user: process.env.EMAIL,
-//     pass: process.env.EMAIL_PASSWORD,
-//   },
-//   tls: {
-//     // ⚠️ Dev only – disables certificate check for self-signed certs
-//     rejectUnauthorized: false,
-//   },
-// });
-
-// /**
-//  * Generic send email
-//  */
-// export const sendEmail = async ({ email, subject, html }) => {
-//   try {
-//     const info = await transporter.sendMail({
-//       from: `"${process.env.EMAIL}" <${process.env.EMAIL}>`, // correct from
-//       to: email,
-//       subject,
-//       html,
-//     });
-//     console.log('✅ Email sent:', info.messageId);
-//     return info;
-//   } catch (err) {
-//     console.error('❌ sendEmail error:', err);
-//     throw err;
-//   }
-// };
-
-// /**
-//  * Send OTP / Account Verification Email
-//  */
-// export const sendOTPEmail = async (email, subject, otp) => {
-//   try {
-//      const html = emailWrapper(`
-//     <p>Hello,</p>
-//     <p>Your OTP for verification is:</p>
-//     <h2>${otp}</h2>
-//     <p>This OTP will expire in 10 minutes.</p>
-//   `);
-//     await sendEmail({
-//       email,
-//       subject,
-//       html,
-//     });
-//   } catch (err) {
-//     console.error('❌ sendOTPEmail error:', err);
-//   }
-// };
-
-// /**
-//  * Send Forgot Password Email
-//  */
-// export const sendForgotPasswordEmail = async (email, resetLink) => {
-//   try {
-//     const html = `
-//       <h1>Password Reset</h1>
-//       <p>You requested to reset your password. Click the link below:</p>
-//       <a href="${resetLink}" target="_blank">${resetLink}</a>
-//     `;
-//     await sendEmail({ email, subject: 'Password Reset Request', html });
-//   } catch (err) {
-//     console.error('❌ sendForgotPasswordEmail error:', err);
-//   }
-// };
-
-// /**
-//  * Send Welcome / Receipt / Notification Email
-//  */
-// export const sendWelcomeEmail = async (email, name) => {
-//   try {
-//     const html = `
-//       <h1>Welcome ${name}!</h1>
-//       <p>Thanks for joining ${process.env.EMAIL}. We’re glad to have you.</p>
-//     `;
-//     await sendEmail({
-//       email,
-//       subject: `Welcome to ${process.env.APP_NAME}`,
-//       html,
-//     });
-//   } catch (err) {
-//     console.error('❌ sendWelcomeEmail error:', err);
-//   }
-// };

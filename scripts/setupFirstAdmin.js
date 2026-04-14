@@ -11,8 +11,8 @@ const setupFirstAdmin = async () => {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('Connected to MongoDB');
 
-    const adminEmail = 'sackagentng@gmail.com';
-    const adminPassword = 'Sackagent@12345';
+    const adminEmail = 'irorunhomesng@gmail.com';
+    const adminPassword = 'irorunhomes@12345';
 
     // Check if admin already exists
     const existingAdmin = await User.findOne({ email: adminEmail });

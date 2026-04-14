@@ -1,5 +1,5 @@
 {
-  "name": "sackagent-backend",
+  "name": "irorunhomes-backend",
   "version": "1.0.0",
   "description": "",
   "main": "server.js",
@@ -30,7 +30,8 @@
     "mongoose": "^9.1.5",
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
-    "node-cron": "^4.2.1"
+    "node-cron": "^4.2.1",
+    "resend": "^6.11.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

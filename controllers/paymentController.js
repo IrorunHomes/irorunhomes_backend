@@ -30,7 +30,7 @@ const recordPayment = async (req, res) => {
 
         // Notify admin for confirmation
         await sendEmail({
-            to: 'sackagentng@gmail.com',
+            to: 'irorunhomesng@gmail.com',
             subject: 'New Payment Requires Confirmation',
             html: `
                 <h3>New Payment Recorded</h3>

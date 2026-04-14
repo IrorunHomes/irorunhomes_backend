@@ -14,6 +14,7 @@ const propertyRoutes = require('./routes/propertyRoutes');
 
 dotenv.config();
 
+
 const app = express();
 
 // === Trust Proxy Configuration ===
@@ -22,9 +23,8 @@ app.set('trust proxy', 1);
 
 const allowedOrigins = [
   process.env.CLIENT_URL,
-  'https://sackagent.vercel.app',
-  "https://sackagent.com",
-  "https://sackagentng.com",
+  'https://irorunhomes.vercel.app',
+  "https://irorunhomes.com",
   'http://localhost:5173',
 ];
 // === Middleware ===
@@ -55,7 +55,7 @@ if (process.env.NODE_ENV === 'development') {
 app.get('/api', (req, res) => {
   res.json({
     message:
-      'Welcome to the SackAgent API. Your number one source for affordable house.',
+      'Welcome to the Irorun Homes API. Your number one source for affordable house.',
   });
 });
 
