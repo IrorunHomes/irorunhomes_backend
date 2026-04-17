@@ -25,6 +25,8 @@ const allowedOrigins = [
   process.env.CLIENT_URL,
   'https://irorunhomes.vercel.app',
   "https://irorunhomes.com",
+  "https://www.irorunhomes.com",
+  "irorunhomes.com",
   'http://localhost:5173',
 ];
 // === Middleware ===
