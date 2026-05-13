@@ -545,6 +545,39 @@ const handleGetAllRentalRequests = async (req, res) => {
 };
 
 
+// Get all Renewals requests (admin view)
+const handleGetAllRenewalRequests = async (req, res) => {
+    try {
+        const { page = 1, limit = 20 } = req.query;
+        const filter = { status: 'renewal_pending' };
+
+        const requests = await RentalRequest.find(filter)
+            .populate('property', 'title price address city')
+            .populate('tenant', 'fullName email phone')
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(parseInt(limit));
+
+        const total = await RentalRequest.countDocuments(filter);
+
+        res.status(200).json({
+            success: true,
+            message: "Renewal requests retrieved",
+            count: requests.length,
+            total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: parseInt(page),
+            requests
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+};
+
+
 // Process rental request (Approve/Reject)
 const handleProcessRentalRequest = async (req, res) => {
     try {
@@ -1096,5 +1129,6 @@ module.exports = {
     
     // Cron job functions (exported for testing)
     handleCheckExpiringLeases,
-    handleAutoExpireLeases
+    handleAutoExpireLeases,
+    handleGetAllRenewalRequests
 };

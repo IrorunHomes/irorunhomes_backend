@@ -10,7 +10,8 @@ const { handleRegisterAdmin,
         handleGetAllActiveLeases,
         handleGetExpiringLeases,
         handleCheckExpiringLeases,
-        handleAutoExpireLeases
+        handleAutoExpireLeases,
+        handleGetAllRenewalRequests
     } = require('../controllers/rentalRequestController');
 const { handleGetAllUsers, handleGetUserById, handleUpdateUserProfile, handleUpdateUserStatus, handleVerifyUserKYC } = require('../controllers/authController');
 
@@ -25,6 +26,7 @@ router.get('/active-leases', protect, authorizeRoles(['admin', 'super_admin']), 
 router.get('/expiring-leases', protect, authorizeRoles(['admin', 'super_admin']), handleGetExpiringLeases);
 router.get('/check-expiring-leases', protect, authorizeRoles(['admin', 'super_admin']), handleCheckExpiringLeases);
 router.post('/auto-expire-leases', protect, authorizeRoles(['admin', 'super_admin']), handleAutoExpireLeases);
+router.get('/renewals', protect, authorizeRoles(['admin', 'super_admin']), handleGetAllRenewalRequests);
 
 router.get('/users', protect, authorizeRoles(['admin', 'super_admin']), handleGetAllUsers);
 router.get('/users/:userId', protect, authorizeRoles(['admin', 'super_admin']), handleGetUserById);
