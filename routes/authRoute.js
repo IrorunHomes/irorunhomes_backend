@@ -10,7 +10,8 @@ const {
     handleGetAllUsers,
     handleUpdateUserProfile,
     handleForgotPassword,
-    handleResetPassword
+    handleResetPassword,
+    handleRefreshToken
  } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 const {authorizeRoles} = require('../middleware/roleMiddleware');
@@ -26,6 +27,8 @@ router.get('/profile', protect, handlegetUserProfile);
 router.put('/profile', protect, handleUpdateUserProfile);
 router.post('/forgot-password', handleForgotPassword);
 router.post('/reset-password', handleResetPassword);
+router.post('/refresh-token', handleRefreshToken);
+
 
 
 // Admin route to get all users

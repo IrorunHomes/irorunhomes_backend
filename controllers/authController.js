@@ -584,6 +584,63 @@ const logoutUser = (req, res) => {
   res.status(200).json({ message: "Logged out successfully" });
 };
 
+
+const handleRefreshToken = async (req, res) => {
+  try {
+    // Get refresh token from cookie
+    const refreshToken = req.cookies?.refreshToken;
+    
+    if (!refreshToken) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'No refresh token provided' 
+      });
+    }
+
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    
+    // Find user
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid refresh token' 
+      });
+    }
+
+    // Generate new access token
+    const accessToken = generateAccessToken(user);
+    
+    res.status(200).json({ 
+      success: true, 
+      accessToken 
+    });
+    
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Refresh token expired' 
+      });
+    }
+    
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid refresh token' 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+};
+
 // VERIFY EMAIL
 const handleVerifyOTP = async (req, res) => {
   try {
@@ -813,5 +870,6 @@ module.exports = {
     handleUpdateUserStatus,
     handleVerifyUserKYC,
     handleForgotPassword,
-    handleResetPassword
+    handleResetPassword,
+    handleRefreshToken
 };
