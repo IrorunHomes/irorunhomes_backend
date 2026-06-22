@@ -1,15 +1,15 @@
 
-const Property = require('../models/propertyModel');
+const SellProperty = require('../models/sellPropertyModel');
 const History = require('../models/historyModel');
 const User = require('../models/userModel');
 const cloudinary = require('../utils/cloudinary');
 
 
 // Get all properties without any checks but with visibility control
-const handleShowAllPropertiesToTenant = async (req, res) => { 
+const handleShowAllSellProperties = async (req, res) => { 
     try {
-        const properties = await Property.find({ isActive: true })
-        .select('-landlordInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests')
+        const properties = await SellProperty.find({ isActive: true })
+        .select('-ownerInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests')
     res.status(200).json({
         success: true,
         count: properties.length,
@@ -23,11 +23,11 @@ const handleShowAllPropertiesToTenant = async (req, res) => {
     }
 };
 
-const handleShowPropertiesToTenantById = async (req, res) => { 
+const handleShowSellPropertiesById = async (req, res) => { 
     try {
         const { id } = req.params;
-        const property = await Property.findById(id)
-        .select('-landlordInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests');
+        const property = await SellProperty.findById(id)
+        .select('-ownerInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests');
         if (!property) {
             return res.status(404).json({
                 success: false,
@@ -47,7 +47,7 @@ const handleShowPropertiesToTenantById = async (req, res) => {
 };
 
 // GET ALL PROPERTY
-const handleGetAllProperty = async (req, res) => {
+const handleGetAllSellProperty = async (req, res) => {
     try {
         // Check if user is admin
         const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
@@ -59,10 +59,10 @@ const handleGetAllProperty = async (req, res) => {
             });
         }
 
-        const properties = await Property.find({ isActive: true })
+        const properties = await SellProperty.find({ isActive: true })
             .populate('listedBy', 'name email')
             .populate('admin', 'superAdmin name email')
-            .populate('currentTenant', 'name email phone');
+            .populate('ownerInfo', 'name email phone');
 
         res.status(200).json({
             success: true,
@@ -78,7 +78,7 @@ const handleGetAllProperty = async (req, res) => {
     }
 };
 
-// Property listing with landlord info (Admin only)
+// Property listing with owner info (Admin only)
 const handlePropertyListing = async (req, res) => {
     try {
         // Check if user is admin
@@ -102,10 +102,8 @@ const handlePropertyListing = async (req, res) => {
             state,
             country,
             propertyType,
-            propertyFor,
-            apartmentType,
             unitNumber,
-            apartmentCount,
+            sellPropertyCount,
             
             // Features (will be converted to nested object)
             bedrooms,
@@ -117,16 +115,16 @@ const handlePropertyListing = async (req, res) => {
             extras,
             
             // Landlord/House Owner Information
-            landlordFullName,
-            landlordEmail,
-            landlordPhone,
-            landlordAlternativePhone,
+            ownerFullName,
+            ownerEmail,
+            ownerPhone,
+            ownerAlternativePhone,
             
             // Landlord Contact Address
-            landlordStreet,
-            landlordCity,
-            landlordState,
-            landlordCountry,
+            ownerStreet,
+            ownerCity,
+            ownerState,
+            ownerCountry,
                         
             // Landlord Bank Details
             bankName,
@@ -139,12 +137,12 @@ const handlePropertyListing = async (req, res) => {
             emergencyContactPhone,
             emergencyContactEmail,
             
-            // Additional Landlord Info
-            landlordOccupation,
+            // Additional Owner Info
+            ownerOccupation,
             nextOfKin,
             relationshipToKin,
             kinPhone,
-            landlordNotes,
+            ownerNotes,
             
             // Management Info
             commissionRate,
@@ -156,18 +154,18 @@ const handlePropertyListing = async (req, res) => {
         } = req.body;
 
         // Validate required fields
-        if (!title || !description || !price || !address || !city || !state || !apartmentType || !propertyType || !propertyFor) {
+        if (!title || !description || !price || !address || !city || !state || !propertyType) {
             return res.status(400).json({
                 success: false,
-                message: "Missing required property fields: title, description, price, address, city, state, apartmentType, propertyType, propertyFor"
+                message: "Missing required property fields: title, description, price, address, city, state, propertyType"
             });
         }
 
-        // Validate required landlord information
-        if (!landlordFullName || !landlordPhone) {
+        // Validate required owner information
+        if (!ownerFullName || !ownerPhone) {
             return res.status(400).json({
                 success: false,
-                message: "Landlord full name and phone are required"
+                message: "Owner full name and phone are required"
             });
         }
 
@@ -304,7 +302,7 @@ const handlePropertyListing = async (req, res) => {
         }
 
         // Create the property WITH nested structure
-        const property = new Property({
+        const property = new SellProperty({
             // Basic property info (top-level fields)
             title,
             description,
@@ -313,12 +311,10 @@ const handlePropertyListing = async (req, res) => {
             city,
             state,
             country: country || 'Nigeria',
-            apartmentType,
             propertyType,
-            propertyFor,
             unitNumber: unitNumber || '',
             features, // Nested object created above
-            apartmentCount: parseInt(apartmentCount) || 1,
+            sellPropertyCount: parseInt(sellPropertyCount) || 1,
             
             // Media (nested object)
             media,
@@ -330,20 +326,20 @@ const handlePropertyListing = async (req, res) => {
             // Status
             status: 'available',
             
-            // Landlord/House Owner Information (nested structure)
-            landlordInfo: {
+            // Owner Information (nested structure)
+            ownerInfo: {
                 personalInfo: {
-                    fullName: landlordFullName,
-                    email: landlordEmail ? landlordEmail.toLowerCase() : '',
-                    phone: landlordPhone,
-                    alternativePhone: landlordAlternativePhone || '',
+                    fullName: ownerFullName,
+                    email: ownerEmail ? ownerEmail.toLowerCase() : '',
+                    phone: ownerPhone,
+                    alternativePhone: ownerAlternativePhone || '',
                 },
                 
                 contactAddress: {
-                    street: landlordStreet || '',
-                    city: landlordCity || '',
-                    state: landlordState || '',
-                    country: landlordCountry || '',
+                    street: ownerStreet || '',
+                    city: ownerCity || '',
+                    state: ownerState || '',
+                    country: ownerCountry || '',
                 },
                 
                 bankDetails: {
@@ -360,11 +356,11 @@ const handlePropertyListing = async (req, res) => {
                 },
                 
                 additionalInfo: {
-                    occupation: landlordOccupation || '',
+                    occupation: ownerOccupation || '',
                     nextOfKin: nextOfKin || '',
                     relationshipToKin: relationshipToKin || '',
                     kinPhone: kinPhone || '',
-                    notes: landlordNotes || ''
+                    notes: ownerNotes || ''
                 },
                 
                 verified: false
@@ -384,7 +380,7 @@ const handlePropertyListing = async (req, res) => {
 
         // Log the action in history
         const history = new History({
-            action: "New Property listed",
+            action: "New Sell Property listed",
             userId: req.user._id,
             propertyId: property._id,
             startDate: new Date(),
@@ -398,7 +394,7 @@ const handlePropertyListing = async (req, res) => {
         // Return full details to admin
         res.status(201).json({
             success: true,
-            message: "Property listed successfully with landlord information",
+            message: "Sell Property listed successfully with landlord information",
             data: property.toAdminJSON()
         });
 
@@ -412,8 +408,8 @@ const handlePropertyListing = async (req, res) => {
     }
 };
 
-// User view property by ID (Admin only)
-const handleViewPropertyById = async (req, res) => {
+// User view sell property by ID (Admin only)
+const handleViewSellPropertyById = async (req, res) => {
     try {
         const { id } = req.params;
         const isAdmin = req.user?.role === 'admin' || req.user?.role === 'super_admin';
@@ -425,7 +421,7 @@ const handleViewPropertyById = async (req, res) => {
             });
         }
         
-        const property = await Property.findById(id)
+        const property = await SellProperty.findById(id)
             .populate('listedBy', 'name email');
 
         if (!property) {
@@ -450,7 +446,7 @@ const handleViewPropertyById = async (req, res) => {
 
 
 // UPDATE A PROPERTY (Admin only)
-const handleUpdateAPropertyById = async (req, res) => {
+const handleUpdateASellPropertyById = async (req, res) => {
     try {
         const { propertyId } = req.params;
 
@@ -461,7 +457,7 @@ const handleUpdateAPropertyById = async (req, res) => {
             });
         }
 
-        const property = await Property.findById(propertyId);
+        const property = await SellProperty.findById(propertyId);
         if (!property) {
             return res.status(404).json({ 
                 success: false, 
@@ -469,22 +465,22 @@ const handleUpdateAPropertyById = async (req, res) => {
             });
         }
 
-        // If updating landlord info, make sure required fields are present
-        if (req.body.landlordInfo) {
-            const landlordInfo = req.body.landlordInfo;
-            if (landlordInfo.personalInfo) {
-                if (!landlordInfo.personalInfo.fullName || !landlordInfo.personalInfo.phone) {
+        // If updating owner info, make sure required fields are present
+        if (req.body.ownerInfo) {
+            const ownerInfo = req.body.ownerInfo;
+            if (ownerInfo.personalInfo) {
+                if (!ownerInfo.personalInfo.fullName || !ownerInfo.personalInfo.phone) {
                     return res.status(400).json({ 
                         success: false, 
-                        message: "Landlord full name and phone are required" 
+                        message: "Owner full name and phone are required" 
                     });
                 }
             }
             
-            if (landlordInfo.bankDetails) {
-                if (!landlordInfo.bankDetails.bankName || 
-                    !landlordInfo.bankDetails.accountNumber || 
-                    !landlordInfo.bankDetails.accountName) {
+            if (ownerInfo.bankDetails) {
+                if (!ownerInfo.bankDetails.bankName || 
+                    !ownerInfo.bankDetails.accountNumber || 
+                    !ownerInfo.bankDetails.accountName) {
                     return res.status(400).json({ 
                         success: false, 
                         message: "Bank name, account number, and account name are required" 
@@ -493,7 +489,7 @@ const handleUpdateAPropertyById = async (req, res) => {
             }
         }
 
-        const updatedProperty = await Property.findByIdAndUpdate(
+        const updatedProperty = await SellProperty.findByIdAndUpdate(
             id,
             { $set: req.body },
             { new: true, runValidators: true }
@@ -532,7 +528,7 @@ const deletePropertyById = async (req, res) => {
             });
         }
 
-        const property = await Property.findById(id);
+        const property = await SellProperty.findById(id);
         if (!property) {
             return res.status(404).json({
                 success: false,
@@ -557,16 +553,16 @@ const deletePropertyById = async (req, res) => {
             }
         }
 
-        await Property.findByIdAndDelete(id);
+        await SellProperty.findByIdAndDelete(id);
         
         // Log the action
         const history = new History({
-            action: "deleteProperty",
+            action: "deleteSellProperty",
             user: req.user._id,
             propertyId: id,
             details: {
                 propertyTitle: property.title,
-                landlordName: property.landlordInfo?.personalInfo?.fullName
+                ownerName: property.ownerInfo?.personalInfo?.fullName
             }
         });
         await history.save();
@@ -583,8 +579,8 @@ const deletePropertyById = async (req, res) => {
     }
 };
 
-// Get landlord info by property ID (Admin only)
-const handleGetLandlordInfoByPropertyId = async (req, res) => {
+// Get owner info by property ID (Admin only)
+const handleGetOwnerInfoByPropertyId = async (req, res) => {
     try {
         const { propertyId } = req.params;
         
@@ -592,11 +588,11 @@ const handleGetLandlordInfoByPropertyId = async (req, res) => {
         if (req.user.role !== 'admin') {
             return res.status(403).json({ 
                 success: false, 
-                message: "Only admins can view landlord information" 
+                message: "Only admins can view owner information" 
             });
         }
 
-        const property = await Property.findById(propertyId);
+        const property = await SellProperty.findById(propertyId);
         
         if (!property) {
             return res.status(404).json({ 
@@ -605,27 +601,27 @@ const handleGetLandlordInfoByPropertyId = async (req, res) => {
             });
         }
 
-        // Get all properties with same landlord (based on phone/email)
-        const landlordProperties = await Property.find({
+        // Get all properties with same owner (based on phone/email)
+        const ownerProperties = await SellProperty.find({
             $or: [
-                { 'landlordInfo.personalInfo.phone': property.landlordInfo.personalInfo.phone },
-                { 'landlordInfo.personalInfo.email': property.landlordInfo.personalInfo.email }
+                { 'ownerInfo.personalInfo.phone': property.ownerInfo.personalInfo.phone },
+                { 'ownerInfo.personalInfo.email': property.ownerInfo.personalInfo.email }
             ],
             _id: { $ne: propertyId }
         }).select('title address city status price apartmentType');
 
         res.status(200).json({
             success: true,
-            message: "Landlord information retrieved",
+            message: "Owner information retrieved",
             data: {
-                landlord: property.landlordInfo,
+                owner: property.ownerInfo,
                 currentProperty: {
                     _id: property._id,
                     title: property.title,
                     address: property.address
                 },
-                otherProperties: landlordProperties,
-                totalPropertiesOwned: landlordProperties.length + 1
+                otherProperties: ownerProperties,
+                totalPropertiesOwned: ownerProperties.length + 1
             }
         });
     } catch (error) {
@@ -636,8 +632,8 @@ const handleGetLandlordInfoByPropertyId = async (req, res) => {
     }
 };
 
-// Search properties by landlord info (Admin only)
-const handleSearchPropertiesByLandlord = async (req, res) => {
+// Search properties by owner info (Admin only)
+const handleSearchPropertiesByOwner = async (req, res) => {
     try {
         const { search, page = 1, limit = 20 } = req.query;
         
@@ -645,7 +641,7 @@ const handleSearchPropertiesByLandlord = async (req, res) => {
         if (req.user.role !== 'admin') {
             return res.status(403).json({ 
                 success: false, 
-                message: "Only admins can search by landlord" 
+                message: "Only admins can search by owner" 
             });
         }
 
@@ -654,20 +650,20 @@ const handleSearchPropertiesByLandlord = async (req, res) => {
         if (search) {
             const searchRegex = new RegExp(search, 'i');
             filter.$or = [
-                { 'landlordInfo.personalInfo.fullName': searchRegex },
-                { 'landlordInfo.personalInfo.phone': searchRegex },
-                { 'landlordInfo.personalInfo.email': searchRegex },
-                { 'landlordInfo.personalInfo.idNumber': searchRegex }
+                { 'ownerInfo.personalInfo.fullName': searchRegex },
+                { 'ownerInfo.personalInfo.phone': searchRegex },
+                { 'ownerInfo.personalInfo.email': searchRegex },
+                { 'ownerInfo.personalInfo.idNumber': searchRegex }
             ];
         }
 
-        const properties = await Property.find(filter)
-            .select('title address city price status landlordInfo.personalInfo.fullName landlordInfo.personalInfo.phone')
+        const properties = await SellProperty.find(filter)
+            .select('title address city price status ownerInfo.personalInfo.fullName ownerInfo.personalInfo.phone')
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(parseInt(limit));
 
-        const total = await Property.countDocuments(filter);
+        const total = await SellProperty.countDocuments(filter);
 
         res.status(200).json({
             success: true,
@@ -695,7 +691,7 @@ const addFavourite = async (req, res) => {
     const propertyId = req.params.propertyId;
     const userId = req.user._id || req.user.id;
     const user = await User.findById(userId).select("-password");
-    const property = await Property.findById(propertyId);
+    const property = await SellProperty.findById(propertyId);
     if (!property) {
       return res.status(404).json({
         success: false,
@@ -738,7 +734,7 @@ const removeFavourite = async (req, res) => {
     const propertyId = req.params.propertyId;
     const userId = req.user._id || req.user.id;
     const user = await User.findById(userId).select("-password");
-    const property = await Property.findById(propertyId);
+    const property = await SellProperty.findById(propertyId);
     if (!property) {
       return res.status(404).json({
         success: false,
@@ -806,14 +802,14 @@ const getFavourite = async (req, res) => {
 
 module.exports = {
     handlePropertyListing,
-    handleGetAllProperty,
-    handleShowAllPropertiesToTenant,
-    handleShowPropertiesToTenantById,
-    handleGetLandlordInfoByPropertyId,
-    handleViewPropertyById,
-    handleUpdateAPropertyById,
-    handleGetLandlordInfoByPropertyId,
-    handleSearchPropertiesByLandlord,
+    handleGetAllSellProperty,
+    handleShowAllSellProperties,
+    handleShowSellPropertiesById,
+    handleGetOwnerInfoByPropertyId,
+    handleViewSellPropertyById,
+    handleUpdateASellPropertyById,
+    handleGetOwnerInfoByPropertyId,
+    handleSearchPropertiesByOwner,
     deletePropertyById,
     addFavourite,
     removeFavourite,

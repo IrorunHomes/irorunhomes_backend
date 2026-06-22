@@ -2,7 +2,7 @@
 
 const mongoose = require('mongoose');
 
-const propertySchema = new mongoose.Schema({
+const sellPropertySchema = new mongoose.Schema({
     title: { 
         type: String, 
         required: true 
@@ -30,24 +30,10 @@ const propertySchema = new mongoose.Schema({
     country: { 
         type: String, 
     },
-
     propertyType: {
         type: String,
         enum: ['apartment', 'land', 'house', 'commercial', 'industrial', 'other'],
         required: true
-    },
-
-    propertyFor: {
-        type: String,
-        enum: ['rent', 'sale'],
-        required: true
-    },
-
-    apartmentType: {
-        type: String,
-        enum: ['a-room', "shop", "office", 'complex', 'self-contained', 'room-and-parlour', 'two-bedroom', 'three-bedroom', 'flat', "others"],
-        default: 'others',
-        required: true,
     },
     unitNumber: { 
         type: String 
@@ -81,7 +67,7 @@ const propertySchema = new mongoose.Schema({
    
     status: {
         type: String,
-        enum: ['available', 'rented', 'bought', 'unavailable', 'maintenance', 'pending'],
+        enum: ['available', 'sold', 'bought', 'unavailable', 'maintenance', 'pending'],
         default: "available"
     },
     
@@ -91,18 +77,18 @@ const propertySchema = new mongoose.Schema({
         required: true
     },
 
-    pendingRequests: [{
+    sellPendingRequests: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'RentalRequest'
+        ref: 'SellRequest'
     }],
     
     approvedRequests: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'RentalRequest'
+        ref: 'SellRequest'
     }],
 
     // Landlord/House Owner Information
-    landlordInfo: {
+    ownerInfo: {
         // Personal Information
         personalInfo: {
             fullName: {
@@ -194,7 +180,12 @@ const propertySchema = new mongoose.Schema({
         required: true
     },
 
-    rentedBy: {
+    soldBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+
+    boughtBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     },
@@ -204,11 +195,11 @@ const propertySchema = new mongoose.Schema({
         ref: 'User',
     },
 
-    rentStartDate: { 
+    soldDate: { 
         type: Date 
     },
     
-    rentEndDate: { 
+    boughtDate: { 
         type: Date 
     },
 
@@ -218,11 +209,6 @@ const propertySchema = new mongoose.Schema({
             default: 10.0
         },
         managementFee: Number,
-        paymentSchedule: {
-            type: String,
-            enum: ['monthly', 'quarterly', 'yearly'],
-            default: 'monthly'
-        },
         contractStartDate: Date,
         contractEndDate: Date
     }
@@ -231,9 +217,9 @@ const propertySchema = new mongoose.Schema({
 );
 
 // Method to get public view (without landlord info)
-propertySchema.methods.toPublicJSON = function() {
+sellPropertySchema.methods.toPublicJSON = function() {
     const property = this.toObject();
-    delete property.landlordInfo;
+    delete property.ownerInfo;
     delete property.managementInfo;
     delete property.pendingRequests;
     delete property.approvedRequests;
@@ -241,21 +227,21 @@ propertySchema.methods.toPublicJSON = function() {
 };
 
 // Method to get admin view (with all info)
-propertySchema.methods.toAdminJSON = function() {
+sellPropertySchema.methods.toAdminJSON = function() {
     return this.toObject();
 };
 
-// Virtual for landlord display (basic info only)
-propertySchema.virtual('landlordBasicInfo').get(function() {
-    if (!this.landlordInfo || !this.landlordInfo.personalInfo) {
+// Virtual for owner display (basic info only)
+sellPropertySchema.virtual('ownerBasicInfo').get(function() {
+    if (!this.ownerInfo || !this.ownerInfo.personalInfo) {
         return null;
     }
     return {
-        name: this.landlordInfo.personalInfo.fullName,
-        phone: this.landlordInfo.personalInfo.phone,
-        verified: this.landlordInfo.verified
+        name: this.ownerInfo.personalInfo.fullName,
+        phone: this.ownerInfo.personalInfo.phone,
+        verified: this.ownerInfo.verified
     };
 });
 
-const Property = mongoose.model("Property", propertySchema);
-module.exports = Property;
+const SellProperty = mongoose.model("SellProperty", sellPropertySchema);
+module.exports = SellProperty;

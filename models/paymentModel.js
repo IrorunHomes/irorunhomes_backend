@@ -25,7 +25,7 @@ const paymentSchema = new mongoose.Schema({
     },
     paymentType: {
         type: String,
-        enum: ['rent', 'security_deposit', 'maintenance', 'other'],
+        enum: ['rent', 'buy', 'sell', 'deposit', 'late_fee', 'early_payment', 'security_deposit', 'maintenance', 'other'],
         default: 'rent'
     },
     period: {
