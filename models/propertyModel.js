@@ -219,8 +219,8 @@ const propertySchema = new mongoose.Schema({
         managementFee: Number,
         paymentSchedule: {
             type: String,
-            enum: ['monthly', 'quarterly', 'yearly'],
-            default: 'monthly'
+            enum: ['monthly', 'quarterly', 'yearly', 'one-time'],
+            default: 'one-time'
         },
         contractStartDate: Date,
         contractEndDate: Date

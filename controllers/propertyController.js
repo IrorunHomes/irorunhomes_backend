@@ -374,7 +374,7 @@ const handlePropertyListing = async (req, res) => {
             managementInfo: {
                 commissionRate: parseFloat(commissionRate) || 10.0,
                 managementFee: parseFloat(managementFee) || 0,
-                paymentSchedule: paymentSchedule || 'monthly',
+                paymentSchedule: paymentSchedule || 'one-time',
                 contractStartDate: contractStartDate ? new Date(contractStartDate) : new Date(),
                 contractEndDate: contractEndDate ? new Date(contractEndDate) : null
             }
