@@ -34,7 +34,7 @@ const propertySchema = new mongoose.Schema({
     propertyType: {
         type: String,
         enum: ['apartment', 'land', 'house', 'commercial', 'industrial', 'other'],
-        required: true
+        default: 'other',
     },
 
     propertyFor: {
@@ -47,7 +47,6 @@ const propertySchema = new mongoose.Schema({
         type: String,
         enum: ['a-room', "shop", "office", 'complex', 'self-contained', 'room-and-parlour', 'two-bedroom', 'three-bedroom', 'flat', "others"],
         default: 'others',
-        required: true,
     },
     unitNumber: { 
         type: String 
