@@ -27,8 +27,7 @@ const rentalRequestSchema = new mongoose.Schema({
         maxlength: 500
     },
     requestedMoveInDate: {
-        type: Date,
-        required: true
+        type: Date
     },
     duration: {
         type: Number,
