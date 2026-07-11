@@ -26,11 +26,9 @@ const handleShowAllPropertiesToTenant = async (req, res) => {
 const handleShowPropertiesToTenantById = async (req, res) => { 
     try {
         const { id } = req.params;
-        const userId = req.user?._id || req.user?.id;
-
+        const userId = req.user._id || req.user.id;
         const property = await Property.findById(id)
-            .select('-landlordInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests');
-        
+        .select('-landlordInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests');
         if (!property) {
             return res.status(404).json({
                 success: false,
@@ -38,49 +36,39 @@ const handleShowPropertiesToTenantById = async (req, res) => {
             });
         }
 
-        // Initialize viewedBy if it doesn't exist
-        if (!property.viewedBy) {
-            property.viewedBy = [];
-        }
+    if (!property.viewedBy) {
+      property.viewedBy = [];
+    }
+    // Check if user is the author (prevent self-views)
+    const isListedBy = property.listedBy.toString() === userId?.toString();
+    if (isListedBy) {
+      return res.json({
+        success: true,
+        data: property,
+        message: 'Self-view not counted'
+      });
+    }
 
-        const userIdStr = userId.toString();
-        const listedById = property.listedBy?.toString();
+    // Check if user has already viewed this property
+    const hasViewed = userId && property.viewedBy.includes(userId);
+    
+    if (!hasViewed) {
+      property.views += 1;
+      
+      // Add user to viewedBy array if authenticated
+      if (userId) {
+        property.viewedBy.push(userId);
+      }
+      
+      await property.save();
+    }
 
-        // Prevent self-views
-        if (listedById === userIdStr) {
-            return res.status(200).json({
-                success: true,
-                data: property,
-                message: 'Self-view not counted',
-                viewCounted: false
-            });
-        }
-
-        // Track view if not already viewed
-        const hasViewed = property.viewedBy.some(id => id.toString() === userIdStr);
-        
-        if (!hasViewed) {
-            property.views = (property.views || 0) + 1;
-            property.viewedBy.push(userId);
-            await property.save();
-            
-            return res.status(200).json({
-                success: true,
-                property,
-                viewCounted: true,
-                message: 'View counted'
-            });
-        }
-
-        return res.status(200).json({
+        res.status(200).json({
             success: true,
             property,
-            viewCounted: false,
-            message: 'Already viewed'
+            viewCounted: !hasViewed && !isListedBy
         });
-
     } catch (error) {
-        console.error('Error in handleShowPropertiesToTenantById:', error);
         res.status(500).json({ 
             success: false, 
             message: error.message 
