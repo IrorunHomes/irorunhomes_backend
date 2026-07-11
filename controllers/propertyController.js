@@ -27,13 +27,6 @@ const handleShowPropertiesToTenantById = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user?._id || req.user?.id;
-        
-        if (!userId) {
-            return res.status(401).json({
-                success: false,
-                message: "User not authenticated"
-            });
-        }
 
         const property = await Property.findById(id)
             .select('-landlordInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests');
