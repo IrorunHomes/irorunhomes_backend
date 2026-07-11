@@ -177,6 +177,25 @@ const propertySchema = new mongoose.Schema({
         default: 0
     },
 
+    viewedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+    }],
+
+  upvotes: {
+    type: Number,
+    default: 0
+  },
+  upvotedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+    }],
+
+  downvotedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+    }],
+
     isActive: {
         type: Boolean,
         default: true

@@ -15,7 +15,8 @@ const {
     deletePropertyById,
     addFavourite,
     removeFavourite,
-    getFavourite
+    getFavourite,
+    getPropertyViews
 } = require('../controllers/propertyController');
 const { uploadPropertyMedia } = require('../utils/multer');
 
@@ -40,5 +41,6 @@ router.delete('/delete-property/:id', protect, authorizeRoles(['admin', 'super_a
 router.post('/add-favourite/:propertyId', protect, addFavourite);
 router.delete('/remove-favourite/:propertyId', protect, removeFavourite);
 router.get('/my-favourites', protect, getFavourite);
+router.get('/views', getPropertyViews);
 
 module.exports = router;

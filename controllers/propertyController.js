@@ -26,6 +26,7 @@ const handleShowAllPropertiesToTenant = async (req, res) => {
 const handleShowPropertiesToTenantById = async (req, res) => { 
     try {
         const { id } = req.params;
+        const userId = req.user._id || req.user.id;
         const property = await Property.findById(id)
         .select('-landlordInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests');
         if (!property) {
@@ -34,9 +35,38 @@ const handleShowPropertiesToTenantById = async (req, res) => {
                 message: "Property not found"
             });
         }
+
+    if (!property.viewedBy) {
+      property.viewedBy = [];
+    }
+    // Check if user is the author (prevent self-views)
+    const isListedBy = property.listedBy.toString() === userId?.toString();
+    if (isListedBy) {
+      return res.json({
+        success: true,
+        data: property,
+        message: 'Self-view not counted'
+      });
+    }
+
+    // Check if user has already viewed this property
+    const hasViewed = userId && property.viewedBy.includes(userId);
+    
+    if (!hasViewed) {
+      property.views += 1;
+      
+      // Add user to viewedBy array if authenticated
+      if (userId) {
+        property.viewedBy.push(userId);
+      }
+      
+      await property.save();
+    }
+
         res.status(200).json({
             success: true,
-            property
+            property,
+            viewCounted: !hasViewed && !isListedBy
         });
     } catch (error) {
         res.status(500).json({ 
@@ -518,7 +548,7 @@ const deletePropertyById = async (req, res) => {
         const { id } = req.params;
         
         // Check if user is admin
-        if (req.user.role !== 'admin') {
+        if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
             return res.status(403).json({ 
                 success: false, 
                 message: "Only admins can delete properties" 
@@ -797,6 +827,24 @@ const getFavourite = async (req, res) => {
       success: false,
       message: error.message
     });
+  }
+};
+
+
+//Get property views by ID
+export const getPropertyViews = async (req, res) => {
+  try {
+    const property = await Property.findById(req.params.id);
+    if (!property) {
+      return res.status(404).json({ error: 'Property not found' });
+    }
+
+    res.json({
+      success: true,
+      data: property.views
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
   }
 };
 
