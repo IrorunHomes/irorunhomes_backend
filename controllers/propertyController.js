@@ -832,7 +832,7 @@ const getFavourite = async (req, res) => {
 
 
 //Get property views by ID
-export const getPropertyViews = async (req, res) => {
+const getPropertyViews = async (req, res) => {
   try {
     const property = await Property.findById(req.params.id);
     if (!property) {
@@ -865,5 +865,6 @@ module.exports = {
     deletePropertyById,
     addFavourite,
     removeFavourite,
-    getFavourite
+    getFavourite,
+    getPropertyViews
 };
