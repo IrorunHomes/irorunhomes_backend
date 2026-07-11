@@ -26,7 +26,6 @@ const handleShowAllPropertiesToTenant = async (req, res) => {
 const handleShowPropertiesToTenantById = async (req, res) => { 
     try {
         const { id } = req.params;
-        const userId = req.user._id || req.user.id;
         const property = await Property.findById(id)
         .select('-landlordInfo -managementInfo -emergencyContact -additionalInfo -pendingRequests -approvedRequests');
         if (!property) {
@@ -35,38 +34,9 @@ const handleShowPropertiesToTenantById = async (req, res) => {
                 message: "Property not found"
             });
         }
-
-    if (!property.viewedBy) {
-      property.viewedBy = [];
-    }
-    // Check if user is the author (prevent self-views)
-    const isListedBy = property.listedBy.toString() === userId?.toString();
-    if (isListedBy) {
-      return res.json({
-        success: true,
-        data: property,
-        message: 'Self-view not counted'
-      });
-    }
-
-    // Check if user has already viewed this property
-    const hasViewed = userId && property.viewedBy.includes(userId);
-    
-    if (!hasViewed) {
-      property.views += 1;
-      
-      // Add user to viewedBy array if authenticated
-      if (userId) {
-        property.viewedBy.push(userId);
-      }
-      
-      await property.save();
-    }
-
         res.status(200).json({
             success: true,
-            property,
-            viewCounted: !hasViewed && !isListedBy
+            property
         });
     } catch (error) {
         res.status(500).json({ 
@@ -74,6 +44,69 @@ const handleShowPropertiesToTenantById = async (req, res) => {
             message: error.message 
         });
     }
+};
+
+const incrementPropertyViews = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?._id;
+
+    const property = await Property.findById(id);
+    if (!property) {
+      return res.status(404).json({ error: 'Property not found' });
+    }
+
+      if (userId) {
+          // Initialize viewedBy array if it doesn't exist
+          if (!property.viewedBy) {
+              property.viewedBy = [];
+          }
+
+          // Check if user is the author (prevent self-views)
+          const isAuthor = property.author.toString() === userId?.toString();
+          if (isAuthor) {
+              return res.json({
+                  success: true,
+                  data: property,
+                  message: 'Self-view not counted'
+              });
+          }
+
+          // Check if user has already viewed this property
+          const hasViewed = userId && property.viewedBy.includes(userId);
+    
+          if (!hasViewed) {
+              property.views += 1;
+      
+              // Add user to viewedBy array if authenticated
+              if (userId) {
+                  property.viewedBy.push(userId);
+              }
+      
+              await property.save();
+          }
+      } else {
+          // For unauthenticated users, we can use IP address or session ID to track views
+          const userIdentifier = req.ip; // Using IP address as a simple identifier
+            if (!property.viewedBy) {
+                property.viewedBy = [];
+            }
+            if (!property.viewedBy.includes(userIdentifier)) {
+                property.views += 1;
+                property.viewedBy.push(userIdentifier);
+                await property.save();
+            }
+      }
+    res.json({
+      success: true,
+      data: property,
+      viewCounted: !hasViewed && !isAuthor,
+      message: hasViewed ? 'View already counted' : 'View counted successfully'
+    });
+  } catch (error) {
+    console.error('Error incrementing property views:', error);
+    res.status(500).json({ error: 'Failed to increment property views' });
+  }
 };
 
 // GET ALL PROPERTY
@@ -866,5 +899,6 @@ module.exports = {
     addFavourite,
     removeFavourite,
     getFavourite,
-    getPropertyViews
+    getPropertyViews,
+    incrementPropertyViews
 };

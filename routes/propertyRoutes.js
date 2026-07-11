@@ -16,7 +16,8 @@ const {
     addFavourite,
     removeFavourite,
     getFavourite,
-    getPropertyViews
+    getPropertyViews,
+    incrementPropertyViews
 } = require('../controllers/propertyController');
 const { uploadPropertyMedia } = require('../utils/multer');
 
@@ -42,5 +43,6 @@ router.post('/add-favourite/:propertyId', protect, addFavourite);
 router.delete('/remove-favourite/:propertyId', protect, removeFavourite);
 router.get('/my-favourites', protect, getFavourite);
 router.get('/views', getPropertyViews);
+router.post('/increment-views/:propertyId', protect, incrementPropertyViews);
 
 module.exports = router;
