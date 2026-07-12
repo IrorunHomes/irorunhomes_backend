@@ -49,63 +49,81 @@ const handleShowPropertiesToTenantById = async (req, res) => {
 const incrementPropertyViews = async (req, res) => {
   try {
     const { propertyId } = req.params;
-    const userId = req.user?._id;
+    const userId = req.user?._id || req.user?.id;
 
     const property = await Property.findById(propertyId);
     if (!property) {
-      return res.status(404).json({ error: 'Property not found' });
+      return res.status(404).json({ 
+        success: false,
+        error: 'Property not found' 
+      });
     }
 
-      if (userId) {
-          // Initialize viewedBy array if it doesn't exist
-          if (!property.viewedBy) {
-              property.viewedBy = [];
-          }
+    let hasViewed = false;
+    let isListedBy = false;
+    let viewCounted = false;
 
-          // Check if user is the author (prevent self-views)
-          const isListedBy = property.listedBy.toString() === userId?.toString();
-          if (isListedBy) {
-              return res.json({
-                  success: true,
-                  data: property,
-                  message: 'Self-view not counted'
-              });
-          }
-
-          // Check if user has already viewed this property
-          const hasViewed = userId && property.viewedBy.includes(userId);
-    
-          if (!hasViewed) {
-              property.views += 1;
-      
-              // Add user to viewedBy array if authenticated
-              if (userId) {
-                  property.viewedBy.push(userId);
-              }
-      
-              await property.save();
-          }
-      } else {
-          // For unauthenticated users, we can use IP address or session ID to track views
-          const userIdentifier = req.ip; // Using IP address as a simple identifier
-            if (!property.viewedBy) {
-                property.viewedBy = [];
-            }
-            if (!property.viewedBy.includes(userIdentifier)) {
-                property.views += 1;
-                property.viewedBy.push(userIdentifier);
-                await property.save();
-            }
+    if (userId) {
+      // Initialize viewedBy array if it doesn't exist
+      if (!property.viewedBy) {
+        property.viewedBy = [];
       }
+
+      // ✅ FIX: Use listedBy instead of author
+      const listedById = property.listedBy?.toString();
+      const userIdStr = userId.toString();
+      
+      // Check if user is the author/owner (prevent self-views)
+      if (listedById === userIdStr) {
+        isListedBy = true;
+        return res.json({
+          success: true,
+          data: property,
+          message: 'Self-view not counted',
+          viewCounted: false
+        });
+      }
+
+      // Check if user has already viewed this property
+      hasViewed = property.viewedBy.some(id => id.toString() === userIdStr);
+
+      if (!hasViewed) {
+        property.views = (property.views || 0) + 1;
+        property.viewedBy.push(userId);
+        await property.save();
+        viewCounted = true;
+      }
+    } else {
+      // For unauthenticated users, use IP address or session ID
+      const userIdentifier = req.ip || req.connection?.remoteAddress || 'anonymous';
+      
+      if (!property.viewedBy) {
+        property.viewedBy = [];
+      }
+      
+      // Check if this IP already viewed
+      const ipViewed = property.viewedBy.includes(userIdentifier);
+      if (!ipViewed) {
+        property.views = (property.views || 0) + 1;
+        property.viewedBy.push(userIdentifier);
+        await property.save();
+        viewCounted = true;
+      }
+    }
+
     res.json({
       success: true,
       data: property,
-      viewCounted: !hasViewed && !isListedBy,
-      message: hasViewed ? 'View already counted' : 'View counted successfully'
+      viewCounted: viewCounted,
+      message: viewCounted ? 'View counted successfully' : 'View already counted'
     });
+
   } catch (error) {
     console.error('Error incrementing property views:', error);
-    res.status(500).json({ error: 'Failed to increment property views' });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to increment property views' 
+    });
   }
 };
 
