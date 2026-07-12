@@ -48,10 +48,10 @@ const handleShowPropertiesToTenantById = async (req, res) => {
 
 const incrementPropertyViews = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { propertyId } = req.params;
     const userId = req.user?._id;
 
-    const property = await Property.findById(id);
+    const property = await Property.findById(propertyId);
     if (!property) {
       return res.status(404).json({ error: 'Property not found' });
     }
