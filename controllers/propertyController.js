@@ -63,8 +63,8 @@ const incrementPropertyViews = async (req, res) => {
           }
 
           // Check if user is the author (prevent self-views)
-          const isAuthor = property.author.toString() === userId?.toString();
-          if (isAuthor) {
+          const isListedBy = property.listedBy.toString() === userId?.toString();
+          if (isListedBy) {
               return res.json({
                   success: true,
                   data: property,
@@ -100,7 +100,7 @@ const incrementPropertyViews = async (req, res) => {
     res.json({
       success: true,
       data: property,
-      viewCounted: !hasViewed && !isAuthor,
+      viewCounted: !hasViewed && !isListedBy,
       message: hasViewed ? 'View already counted' : 'View counted successfully'
     });
   } catch (error) {
